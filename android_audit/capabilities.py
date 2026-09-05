@@ -7,7 +7,7 @@ import shutil
 import sys
 from .core import write_json
 
-DEVICE_TOOLS = ('id', 'getprop', 'settings', 'dumpsys', 'service', 'pm', 'cmd', 'sm', 'bmgr',
+DEVICE_TOOLS = ('id', 'getprop', 'settings', 'dumpsys', 'service', 'pm', 'cmd', 'sm', 'bmgr', 'ps',
                 'logcat', 'ip', 'ss', 'netstat', 'cat', 'ls', 'find', 'getenforce', 'lshal',
                 'timeout', 'tcpdump', 'su', 'iptables-save', 'ip6tables-save', 'nft')
 

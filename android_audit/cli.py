@@ -38,6 +38,12 @@ def device_path(value):
     return value
 
 
+def capture_interface(value):
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]+', value):
+        raise argparse.ArgumentTypeError('expected a simple interface name such as any, wlan0 or rmnet0')
+    return value
+
+
 def parser():
     p = argparse.ArgumentParser(prog='hexwarden', description='Hexwarden - modular Android security auditing over ADB')
     p.add_argument('--version', action='version', version=f'Hexwarden {__version__}')
@@ -59,6 +65,8 @@ def parser():
     scan.add_argument('--patch-max-age', type=positive, default=90)
     scan.add_argument('--log-lines', type=positive, default=5000)
     scan.add_argument('--capture-seconds', type=positive, help='opt in to device tcpdump capture on any interface')
+    scan.add_argument('--capture-interface', type=capture_interface, default='any', help='device interface for passive capture (default: any)')
+    scan.add_argument('--capture-snaplen', type=int, default=0, help='tcpdump snap length in bytes; 0 keeps full packets')
     scan.add_argument('--bt-mac', type=bluetooth_mac, help='opt in to host Bluetooth testing of this remote MAC')
     scan.add_argument('--bt-mode', choices=('both', 'classic', 'ble'), default='both')
     scan.add_argument('--bt-timeout', type=positive, default=30, help='deadline per host Bluetooth discovery phase (seconds)')
@@ -134,6 +142,8 @@ def main(argv=None):
         return 0
     if args.user < 0:
         p.error('--user must be nonnegative')
+    if args.capture_snaplen < 0:
+        p.error('--capture-snaplen must be zero or positive')
     for package in args.package:
         if not re.fullmatch(r'[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*', package):
             p.error('invalid package name')
@@ -179,6 +189,7 @@ def main(argv=None):
                 'device': args.serial, 'status': 'running', 'modules': [], 'requested_modules': selected,
                 'scope': {'user': args.user, 'packages': args.package, 'root': args.root,
                           'extract_apks': args.extract_apks, 'capture_seconds': args.capture_seconds,
+                          'capture_interface': args.capture_interface, 'capture_snaplen': args.capture_snaplen,
                           'patch_max_age': args.patch_max_age, 'max_apps': args.max_apps}}
     document['scope']['bluetooth'] = {
         'mac': args.bt_mac, 'mode': args.bt_mode, 'timeout': args.bt_timeout,

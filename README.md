@@ -111,6 +111,10 @@ hexwarden scan --modules bluetooth --bt-mac AA:BB:CC:DD:EE:FF
 hexwarden scan --help
 ```
 
+The network module collects interface addresses, link state, IPv4/IPv6 routes and policy rules, socket listeners, process identities and package UIDs. When `ss` exposes PIDs, listener records are correlated with `ps` and `pm list packages -U`; a `netstat` fallback is retained when `ss` is unavailable but cannot provide the same attribution. It also summarizes firewall chain policies and records default routes, interface roles and forwarding state. A wildcard bind remains a review candidate until its owning process, routes, firewall and reachable interfaces are checked together.
+
+Passive analysis is opt-in with `--capture-seconds`. The complete capture is retained as `traffic.pcap` together with `capture-metadata.json`, even when `timeout` returns its normal stop code. Use `--capture-interface wlan0` to limit capture to one interface and `--capture-snaplen 256` to limit packet bytes; the default snap length `0` keeps full packets for manual review. The capture is then passed to `tshark`, which looks for application payloads in common cleartext protocols including HTTP, FTP, Telnet, SMTP, POP, IMAP, IRC, LDAP, MQTT, XMPP, SIP and RTSP. Findings retain protocol names and frame numbers but omit packet Info fields and payload contents, which may contain secrets. STARTTLS, QUIC, proprietary protocols and encrypted traffic still require manual review.
+
 By default, scans select all modules, user 0, 30-second command deadlines, 5,000 log lines and a 90-day patch-age threshold. APK extraction, traffic capture and host Bluetooth testing are opt-in. Use `--max-apps` to cap package collection, `--patch-max-age` to change the patch policy and `--data-dir` to change the output directory. `--user` selects settings/AppOps and user certificate paths; installed package visibility is determined by ADB.
 
 The banner goes to stderr; `--no-banner` suppresses it. The original `android-audit` command and `python3 -m android_audit` remain compatible aliases.

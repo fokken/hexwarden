@@ -1,45 +1,170 @@
-CATEGORY = 'networking'
+"""Network inventory and conservative reachability review."""
 
 import re
 
-def wildcard_listeners(value):
-    candidates = []
+CATEGORY = 'networking'
+
+
+def _endpoint_is_wildcard(endpoint):
+    host = endpoint.rsplit(':', 1)[0].strip('[]') if ':' in endpoint else endpoint
+    return host in ('0.0.0.0', '*', '::')
+
+
+def parse_listeners(value):
+    """Parse ss/netstat output without assuming process metadata is present."""
+    listeners = []
     for line in value.splitlines():
         fields = line.split()
-        if len(fields) >= 6 and fields[0] in ('tcp', 'udp', 'tcp6', 'udp6'):
-            local = fields[4]
-            if re.match(r'^(?:0\.0\.0\.0|\*|\[::\]|::):', local):
-                candidates.append({'protocol': fields[0], 'local': local})
-    return candidates
+        if not fields or fields[0] not in ('tcp', 'tcp6', 'udp', 'udp6'):
+            continue
+        if len(fields) < 5:
+            continue
+        state, local, peer = fields[1], fields[4], fields[5] if len(fields) > 5 else ''
+        if fields[0].startswith('tcp') and state.upper() != 'LISTEN':
+            continue
+        if fields[0].startswith('udp') and state.upper() not in ('UNCONN', 'LISTEN'):
+            continue
+        listeners.append({'protocol': fields[0], 'state': state, 'local': local,
+                          'peer': peer, 'wildcard': _endpoint_is_wildcard(local),
+                          'process': ' '.join(fields[6:]) if len(fields) > 6 else None})
+    return listeners
+
+
+def wildcard_listeners(value):
+    return [listener for listener in parse_listeners(value) if listener['wildcard']]
+
+
+def parse_processes(value):
+    result = {}
+    for line in value.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or not fields[0].isdigit():
+            continue
+        pid = int(fields[0])
+        uid = next((field.split('=', 1)[1] for field in fields if field.startswith('uid=')), None)
+        if uid is None and len(fields) >= 3 and re.fullmatch(r'[A-Za-z0-9_.:-]+', fields[1]):
+            uid = fields[1]
+        result[pid] = {'pid': pid, 'uid': uid, 'name': fields[-1], 'raw': line}
+    return result
+
+
+def parse_package_uids(value):
+    """Parse `pm list packages -U` rows into UID-to-package names."""
+    mapping = {}
+    for line in value.splitlines():
+        match = re.search(r'package:([^\s]+)\s+uid:(\d+)', line)
+        if match:
+            mapping.setdefault(match[2], []).append(match[1])
+    return mapping
+
+
+def correlate_listeners(listeners, processes):
+    correlated = []
+    for listener in listeners:
+        item = dict(listener)
+        match = re.search(r'pid=(\d+)', listener.get('process') or '')
+        item['pid'] = int(match.group(1)) if match else None
+        item['process_identity'] = processes.get(item['pid']) if item['pid'] else None
+        correlated.append(item)
+    return correlated
+
+
+def parse_interfaces(value):
+    interfaces, current = [], None
+    for line in value.splitlines():
+        match = re.match(r'\d+:\s+([^:]+):\s+<([^>]*)>', line)
+        if match:
+            current = {'name': match[1], 'flags': match[2].split(','), 'addresses': []}
+            interfaces.append(current)
+        elif current:
+            match = re.search(r'\binet6?\s+([^\s]+)', line)
+            if match:
+                current['addresses'].append(match[1])
+    return interfaces
+
+
+def parse_routes(value):
+    routes = []
+    for line in value.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        route = {'raw': line, 'default': fields[0] == 'default'}
+        for key in ('dev', 'via', 'metric'):
+            if key in fields and fields.index(key) + 1 < len(fields):
+                route[{'dev': 'interface', 'via': 'gateway', 'metric': 'metric'}[key]] = fields[fields.index(key) + 1]
+        routes.append(route)
+    return routes
+
+
+def firewall_summary(value):
+    policies = re.findall(r'(?im)^:([A-Za-z0-9_]+)\s+([A-Z]+)', value)
+    rules = [line.strip() for line in value.splitlines() if line.strip().startswith('-A ')]
+    return {'chains': [{'name': name, 'policy': policy} for name, policy in policies],
+            'rule_count': len(rules), 'default_policies': {name: policy for name, policy in policies}}
+
 
 def run(c):
-    for label, command in (
+    values = {}
+    commands = (
         ('addresses', 'ip -details addr show'), ('links', 'ip -details link show'),
         ('routes4', 'ip -4 route show table all'), ('routes6', 'ip -6 route show table all'),
         ('rules4', 'ip -4 rule show'), ('rules6', 'ip -6 rule show'),
-        ('listeners', 'ss -lntup'), ('unix_sockets', 'ss -lx'),
+        ('listeners', 'ss -lntup'), ('unix_sockets', 'ss -lx'), ('processes', 'ps -A -o PID,UID,NAME'),
+        ('package_uids', 'pm list packages -U'),
         ('connectivity', 'dumpsys connectivity'), ('wifi', 'dumpsys wifi'),
         ('tethering', 'dumpsys tethering'), ('ethernet', 'dumpsys ethernet'),
         ('ipv4_forward', 'cat /proc/sys/net/ipv4/ip_forward'),
-        ('ipv6_forward', 'cat /proc/sys/net/ipv6/conf/all/forwarding')):
+        ('ipv6_forward', 'cat /proc/sys/net/ipv6/conf/all/forwarding'))
+    for label, command in commands:
         if label == 'listeners' and c.capabilities:
-            commands = c.capabilities['device']['commands']
-            if commands.get('ss') == 'unavailable' and commands.get('netstat') == 'available':
+            available = c.capabilities['device']['commands']
+            if available.get('ss') == 'unavailable' and available.get('netstat') == 'available':
                 command = 'netstat -lntu'
                 c.note('ss unavailable; listener evidence uses netstat without process attribution.')
         value = c.shell(command, label)
-        if label == 'listeners':
-            recognized = bool(value) and any(line.split() and line.split()[0] in ('Netid', 'tcp', 'tcp6', 'udp', 'udp6') for line in value.splitlines())
-            c.check('wildcard_listener_heuristic', recognized and command.startswith('ss '),
-                    reason='Requires ss output; fallback netstat is retained for manual review.' if not command.startswith('ss ') else None)
-        if label in ('ipv4_forward', 'ipv6_forward'):
+        values[label] = value
+        if label == 'addresses':
+            c.check('interface_inventory', bool(parse_interfaces(value or '')), scope='all interfaces')
+        elif label.startswith('routes'):
+            c.check('route_inventory', bool(parse_routes(value or '')), scope=label)
+        elif label == 'processes':
+            c.check('process_inventory', bool(parse_processes(value or '')))
+        elif label == 'package_uids':
+            c.check('package_uid_inventory', bool(parse_package_uids(value or '')))
+        elif label == 'listeners':
+            parsed = parse_listeners(value or '')
+            recognized = bool(parsed) or bool(value and any(line.startswith(('Netid', 'Proto')) for line in value.splitlines()))
+            c.check('listener_inventory', recognized, reason='No parseable listener rows.' if not recognized else None)
+            correlated = correlate_listeners(parsed, parse_processes(values.get('processes') or ''))
+            package_uids = parse_package_uids(values.get('package_uids') or '')
+            for listener in correlated:
+                identity = listener.get('process_identity')
+                if identity and identity.get('uid') in package_uids:
+                    identity['packages'] = package_uids[identity['uid']]
+            if correlated:
+                values['listeners_correlated'] = correlated
+                wildcard = [listener for listener in correlated if listener['wildcard']]
+                if wildcard:
+                    c.finding('HW-NET-001', {'listeners': wildcard, 'process_identity_available': any(x['process_identity'] for x in wildcard)}, 'low', asset={'device': c.args.serial, 'listeners': [(x['protocol'], x['local']) for x in wildcard]})
+        elif label in ('ipv4_forward', 'ipv6_forward'):
             c.check('ip_forwarding', value is not None and value.strip() in ('0', '1'), scope=label)
-        if label == 'listeners' and value:
-            listeners = wildcard_listeners(value)
-            if listeners:
-                c.finding('HW-NET-001', listeners, 'low')
-        if label in ('ipv4_forward', 'ipv6_forward') and value and value.strip() == '1':
-            c.finding('HW-NET-002', label + ': review expected routing/tethering role.', 'info', 'high', asset={'device': c.args.serial, 'stack': label})
+            if value and value.strip() == '1':
+                c.finding('HW-NET-002', label + ': review expected routing/tethering role.', 'info', 'high', asset={'device': c.args.serial, 'stack': label})
+
+    firewall = []
     for label, command in (('iptables', 'iptables-save'), ('ip6tables', 'ip6tables-save'), ('nftables', 'nft list ruleset')):
-        c.shell(command, label, root=True)
-    c.note('Correlate AP/tethering/client roles in Wi-Fi and tethering dumps. Android Auto/vendor projection is not reliably identifiable as CarPlay. Socket visibility, eBPF policy and offloaded firewall paths may be restricted; listening does not prove remote reachability.')
+        value = c.shell(command, label, root=True)
+        if value:
+            summary = firewall_summary(value) if label != 'nftables' else {'rule_count': len([line for line in value.splitlines() if line.strip()]), 'default_policies': {}}
+            firewall.append({'family': label, **summary})
+            if label != 'nftables' and summary['default_policies'] and all(policy == 'ACCEPT' for policy in summary['default_policies'].values()):
+                c.finding('HW-NET-004', {'family': label, 'summary': summary}, 'medium', 'medium', asset={'device': c.args.serial, 'family': label})
+        c.check('firewall_policy', value is not None, scope=label, reason='Root/firewall command unavailable.' if value is None else None)
+    if firewall:
+        values['firewall_summary'] = firewall
+    c.result['network_analysis'] = {'interfaces': parse_interfaces(values.get('addresses') or ''),
+        'default_routes': [route for label in ('routes4', 'routes6') for route in parse_routes(values.get(label) or '') if route['default']],
+        'listeners': values.get('listeners_correlated', []), 'firewall': firewall,
+        'package_uids': parse_package_uids(values.get('package_uids') or '')}
+    c.note('Socket process identity is best-effort and depends on ss permissions; netstat fallback has no PID attribution. Correlate wildcard listeners with default routes, interface addresses, tethering and firewall policy before treating exposure as reachable. eBPF/offload paths, other namespaces and OEM projection roles may remain invisible.')
