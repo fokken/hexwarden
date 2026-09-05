@@ -1,0 +1,41 @@
+"""Stable rule IDs and review guidance. IDs are independent of display titles."""
+import hashlib
+import json
+
+# ID, title, classification, recommended action, verification procedure.
+RULE_DATA = [
+('HW-DEV-001', 'Developer setting enabled', 'observation', 'Disable unnecessary development/debugging features after the assessment.', 'Re-read the setting after changing it and verify the intended USB/network debugging workflow.'),
+('HW-DEV-002', 'Network ADB configured', 'review_candidate', 'Disable network ADB when unused; otherwise restrict its reachability and require authentication.', 'Correlate the configured port with listening sockets and test access from the intended network boundary.'),
+('HW-ENC-001', 'Storage reports unencrypted', 'review_candidate', 'Use the vendor-supported storage encryption configuration for sensitive volumes.', 'Confirm volume-specific encryption and key protection using trusted device/vendor evidence.'),
+('HW-INSTALL-001', 'Legacy unknown-source installation enabled', 'observation', 'Disable installation paths that are not required by the deployment.', 'Check the Android version, installer AppOps and device-management policy.'),
+('HW-INSTALL-002', 'Apps allowed to request APK installation', 'review_candidate', 'Restrict APK installation permission to approved installers.', 'Review the affected installers and confirm the user/policy authorization flow; requesting installation is not silent installation.'),
+('HW-PATCH-001', 'Security patch exceeds age policy', 'review_candidate', 'Install an approved vendor update or document an exception to the configured patch-age policy.', 'Validate system/vendor patch dates and update provenance; rerun with the agreed age threshold.'),
+('HW-LOG-001', 'Potential secrets in logcat', 'review_candidate', 'Remove sensitive logging; if a real credential was exposed, rotate it and address retained log copies.', 'Inspect the referenced lines securely, distinguish placeholders from live secrets, then reproduce and retest the logging path.'),
+('HW-NET-001', 'Services bound to wildcard addresses', 'review_candidate', 'Bind services to the required interfaces and restrict unnecessary network access.', 'Identify the owning process and test reachability through the effective firewall from relevant networks.'),
+('HW-NET-002', 'IP forwarding enabled', 'observation', 'Keep forwarding only where the intended routing/tethering role requires it.', 'Compare forwarding, routes and tethering policy with the intended interface roles.'),
+('HW-NET-003', 'Potential cleartext application traffic', 'review_candidate', 'Require authenticated transport encryption for sensitive application traffic.', 'Inspect the referenced frames for actual cleartext payload and distinguish STARTTLS negotiation; repeat a representative capture.'),
+('HW-BT-001', 'Bluetooth Classic services advertised', 'observation', 'Review whether each advertised Bluetooth service is required.', 'Compare SDP records with intended profiles; discovery does not establish access authorization.'),
+('HW-BT-002', 'Bluetooth Classic endpoint accepts host connection', 'observation', 'Restrict unused endpoints and enforce the intended pairing/authentication policy.', 'Repeat from a controlled bond state and verify application authorization; a connection is not proof of unauthenticated access.'),
+('HW-BT-003', 'BLE characteristic advertises write support', 'review_candidate', 'Require the appropriate authentication and authorization for sensitive characteristic writes.', 'Use a device-specific, approved write payload and controlled bond state to verify effective authorization.'),
+('HW-BT-004', 'BLE characteristic readable in current host security context', 'observation', 'Review whether the exposed value is appropriate for this host security context.', 'Classify the value without publishing it and compare access in controlled paired/unpaired contexts.'),
+('HW-CA-001', 'Possible test/debug trust anchor', 'review_candidate', 'Remove unapproved test anchors using the supported trust-store management mechanism.', 'Compare the certificate SHA-256 fingerprint with an approved baseline; a subject name alone is insufficient.'),
+('HW-APP-001', 'Exported component without manifest permission', 'review_candidate', 'For unintended exposure, disable export or enforce suitable permissions and runtime authorization.', 'Resolve effective manifests and test authorization as an unprivileged caller, including provider URI/path permissions.'),
+('HW-APP-002', 'Privileged app API exposure candidate', 'review_candidate', 'Restrict sensitive privileged operations to authorized callers.', 'Confirm actual privileged grants and runtime caller checks before assigning exploitability or higher severity.'),
+('HW-APP-003', 'Custom permission with weak protection level', 'review_candidate', 'Use protection appropriate to the protected operation; signature permissions may suit trusted inter-app IPC.', 'Map permission ownership and consumers, then test whether an untrusted caller can obtain meaningful access.'),
+('HW-APP-004', 'Debuggable application', 'observation', 'Disable debuggable in production builds where debugging is not required.', 'Verify the installed release variant and effective manifest, then retest the intended debugging policy.'),
+('HW-FS-001', 'SELinux not enforcing', 'review_candidate', 'Restore an approved enforcing SELinux configuration and resolve required policy denials.', 'Confirm enforcing mode and review policy behavior on the intended production build.'),
+('HW-FS-002', 'World-writable files require review', 'review_candidate', 'Restrict unintended file write access while preserving required service ownership.', 'Test actual access from the relevant app context and correlate DAC, SELinux, mounts and namespace restrictions.'),
+('HW-BOOT-001', 'Bootloader reports unlocked', 'review_candidate', 'Restore the vendor-approved production boot state and signing trust.', 'Use the vendor procedure and independent boot/attestation evidence; assess bootloader locking only with compatible trusted firmware.'),
+('HW-BOOT-002', 'Verified boot requires review', 'review_candidate', 'Use the intended AVB trust root and approved signed firmware.', 'Verify the meaning of the boot state and actual signing key; a user-configured trust root can explain yellow state.'),
+('HW-BOOT-003', 'dm-verity enforcement requires review', 'review_candidate', 'Restore intended verified-partition enforcement using approved firmware configuration.', 'Validate verity behavior and boot evidence independently of potentially modified runtime properties.'),
+('HW-BOOT-004', 'Build tagged test-keys', 'review_candidate', 'Use approved production signing keys for production images.', 'Inspect actual image/APK signing fingerprints; the build tag is only an indicator.'),
+('HW-DZ-001', 'Sensitive package permissions granted', 'observation', 'Review sensitive grants against each package role and remove unnecessary privileges.', 'Inspect PackageManager grants together with AppOps and actual privileged API authorization.'),
+('HW-DZ-002', 'Filesystem access succeeded from Drozer agent', 'observation', 'Review whether this specific agent identity should have the demonstrated access.', 'Compare the target path and agent UID/SELinux context with the intended policy; repeat the same bounded operation.'),
+('HW-DZ-003', 'Drozer write probe cleanup not confirmed', 'review_candidate', 'Inspect the recorded unique probe path and remove a remaining probe file.', 'Confirm that the exact probe path no longer exists in the tested context.'),
+]
+RULES = {row[0]: dict(zip(('rule_id', 'title', 'classification', 'remediation', 'verification'), row)) for row in RULE_DATA}
+
+
+def instance_id(rule_id, asset):
+    identity = json.dumps({'rule_id': rule_id, 'asset': asset}, sort_keys=True, separators=(',', ':'))
+    return rule_id + '-' + hashlib.sha256(identity.encode()).hexdigest()[:16]

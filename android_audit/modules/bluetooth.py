@@ -80,11 +80,12 @@ def host_tests(c):
             value = c.command(['sdptool', 'browse', mac], 'host_sdp', timeout=c.args.bt_timeout)
             if value is not None:
                 records = parse_sdp(value)
+                c.check('sdp_service_parsing', bool(records), scope=mac, reason='No parseable service records.' if not records else None)
                 path = c.directory / 'sdp-services.json'
                 write_json(path, {'mac': mac, 'services': records})
                 c.result['evidence'].append({'path': str(path.relative_to(c.root)), 'kind': 'derived'})
                 if records:
-                    c.finding('Bluetooth Classic services advertised', {'mac': mac, 'services': records}, 'info', 'high')
+                    c.finding('HW-BT-001', {'mac': mac, 'services': records}, 'info', 'high')
                 else:
                     c.note('SDP produced no parseable service records; this is not proof of no services.')
                 if c.args.bt_connect_classic:
@@ -93,8 +94,9 @@ def host_tests(c):
                         c.note('Classic connection probes capped at 32 advertised endpoints.')
                     for protocol, endpoint in endpoints[:32]:
                         result = worker(c, protocol, ['--endpoint', str(endpoint)], timeout=min(c.args.bt_timeout, 5))
+                        c.check('classic_connection_probe', bool(result) and result.get('status') == 'connected', scope={'mac': mac, 'protocol': protocol, 'endpoint': endpoint})
                         if result and result.get('status') == 'connected':
-                            c.finding('Bluetooth Classic endpoint accepts host connection', result, 'info', 'high')
+                            c.finding('HW-BT-002', result, 'info', 'high')
                         elif result:
                             c.note(f'{protocol} endpoint {endpoint}: connection failed or unavailable; inspect worker evidence, not proof of filtering/authentication.')
         else:
@@ -102,6 +104,7 @@ def host_tests(c):
     if c.args.bt_mode in ('both', 'ble'):
         extra = (['--read'] if c.args.bt_read else []) + (['--pair'] if c.args.bt_pair else [])
         result = worker(c, 'ble', extra)
+        c.check('ble_service_inspection', bool(result) and result.get('status') == 'collected', scope=mac)
         if result:
             for error in result.get('errors', []):
                 c.note('BLE: ' + error)
@@ -111,11 +114,12 @@ def host_tests(c):
                 for char in service['characteristics']:
                     detail = {'mac': mac, 'service_uuid': service['uuid'], 'characteristic_uuid': char['uuid'],
                               'handle': char['handle'], 'properties': char['properties']}
+                    refs = [{**ref, 'locator': {'service_uuid': service['uuid'], 'characteristic_handle': char['handle']}} for ref in c.latest_evidence]
                     if char['advertises_write']:
-                        c.finding('BLE characteristic advertises write support', detail, 'info', 'high')
+                        c.finding('HW-BT-003', detail, 'info', 'high', evidence=refs)
                     if char.get('read', {}).get('status') == 'success':
-                        c.finding('BLE characteristic readable in current host security context',
-                                  {**detail, 'bytes_read': char['read']['length']}, 'info', 'high')
+                        c.finding('HW-BT-004',
+                                  {**detail, 'bytes_read': char['read']['length']}, 'info', 'high', evidence=refs)
     if shutil.which('bluetoothctl') and sys.platform.startswith('linux'):
         c.command(['bluetoothctl', 'info', mac], 'host_target_after')
     c.note('Host tests use the default adapter and its existing bonds. Successful reads/connections do not prove unauthenticated access. GATT write flags are advertised capabilities, not verified write authorization. No characteristic writes, notifications or application payloads are sent. SDP may omit hidden/non-browsable endpoints. Target MAC is user-supplied and not verified against the ADB device; BLE privacy may require a different/current address.')

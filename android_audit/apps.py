@@ -8,6 +8,26 @@ from .core import write_json
 
 ANDROID = '{http://schemas.android.com/apk/res/android}'
 
+
+def manifest_evidence(manifest, **locator):
+    return [{'path': manifest['apk'].removesuffix('.apk') + '.manifest.xml', 'locator': locator}]
+
+
+def record_manifest_checks(c, apps, check_id):
+    if not apps:
+        c.check(check_id, False, reason='No visible packages were collected.')
+    for app in apps:
+        if not app['manifests']:
+            c.check(check_id, False, scope=app['package'], evidence=[],
+                    reason='No decoded manifests: extraction/dependency unavailable or collection failed.')
+        for manifest in app['manifests']:
+            resolved = all(component['exported'] is not None for component in manifest['components'])
+            c.check(check_id, resolved, scope={'package': app['package'], 'apk': manifest['apk']},
+                    evidence=manifest_evidence(manifest),
+                    reason='Unresolved exported resource value.' if not resolved else None)
+        if app['apks'] and len(app['manifests']) < len(app['apks']):
+            c.check(check_id, False, scope=app['package'], evidence=[], reason='Some extracted APK manifests could not be decoded.')
+
 def manifest_analysis(tree):
     app = tree.find('application')
     uses = tree.find('uses-sdk')
@@ -111,6 +131,7 @@ def collect_apps(c):
                         manifest['apk'] = str(destination.relative_to(c.root))
                         item['manifests'].append(manifest)
                         destination.with_suffix('.manifest.xml').write_bytes(apk.get_android_manifest_axml().get_xml())
+                        c.result['evidence'].append({'path': str(destination.with_suffix('.manifest.xml').relative_to(c.root)), 'kind': 'decoded_manifest'})
                     except Exception as exc:
                         c.note(f'{package}: manifest analysis failed ({type(exc).__name__}).')
         apps.append(item)

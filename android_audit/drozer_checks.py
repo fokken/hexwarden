@@ -32,9 +32,11 @@ def parse_events(text):
 def analyze(c, events):
     identity = next((e for e in events if e['kind'] == 'identity'), None)
     if identity is None:
+        c.check('drozer_agent_identity', False, reason='No identity event was returned.')
         c.note('Drozer agent identity not established; probe results cannot be attributed.')
         return
     c.result['execution_context'] = identity
+    c.check('drozer_agent_identity', True)
     if identity.get('user_id') is not None and identity['user_id'] != c.args.user:
         c.note('Drozer agent user differs from the selected ADB settings user; do not merge their access results.')
     if identity.get('uid') in (0, 1000, 2000):
@@ -45,23 +47,28 @@ def analyze(c, events):
         c.note('Drozer probe did not finish; some requested checks may not have run.')
     created = {e['path'] for e in events if e['kind'] == 'probe_created'}
     cleaned = set()
-    for event in events:
+    for event_index, event in enumerate(events):
+        refs = [{**ref, 'locator': {'json_pointer': '/' + str(event_index)}} for ref in c.latest_evidence]
         if event['kind'] == 'package_grants':
+            c.check('effective_package_grants', True, scope=event['package'], evidence=refs)
             grants = [p['permission'] for p in event['permissions']
                       if p.get('granted') is True and p['permission'] in SENSITIVE_GRANTS]
             if grants:
-                c.finding('Sensitive package permissions granted',
+                c.finding('HW-DZ-001',
                           {'package': event['package'], 'uid': event['uid'], 'permissions': grants,
-                           'observer': identity, 'appops_verified': False}, 'info', 'high')
+                           'observer': identity, 'appops_verified': False}, 'info', 'high', evidence=refs)
         elif event['kind'] == 'filesystem':
+            c.check('agent_filesystem_probe', event.get('status') == 'success',
+                    scope={'path': event['path'], 'action': event['action']}, evidence=refs,
+                    reason='Access could not be established.' if event.get('status') != 'success' else None)
             if event.get('cleanup_succeeded'):
                 cleaned.add(event['probe_path'])
             if event.get('status') == 'success':
                 # Directory names and content bytes stay outside finding text.
-                c.finding('Filesystem access succeeded from Drozer agent',
+                c.finding('HW-DZ-002',
                           {'path': event['path'], 'action': event['action'], 'agent': identity,
                            'bytes_read': event.get('bytes_read'), 'bytes_written': event.get('bytes_written')},
-                          'info', 'high')
+                          'info', 'high', asset={'device': getattr(c.args, 'serial', None), 'path': event['path'], 'action': event['action'], 'agent_uid': identity.get('uid'), 'agent_package': identity.get('package')}, evidence=refs)
             else:
                 c.note(f"Drozer {event.get('action')} probe for {event.get('path')}: {event.get('status')}; denial, invisibility or I/O error is not proof of globally secure ACLs.")
             if event.get('truncated'):
@@ -69,7 +76,7 @@ def analyze(c, events):
         elif event['kind'] == 'error':
             c.note(f"Drozer {event.get('stage')} failed: {event.get('error')}")
     for path in sorted(created - cleaned):
-        c.finding('Drozer write probe cleanup not confirmed', {'path': path, 'agent': identity}, 'low', 'high')
+        c.finding('HW-DZ-003', {'path': path, 'agent': identity}, 'low', 'high')
         c.note('A probe file may remain after failure/interruption; inspect the recorded path and remove it manually.')
 
 
@@ -141,6 +148,7 @@ def run(c):
     path = workspace / 'agent-checks.json'
     write_json(path, events)
     c.result['evidence'].append({'path': str(path.relative_to(c.root)), 'kind': 'derived'})
+    c.latest_evidence = [{'path': str(path.relative_to(c.root))}]
     analyze(c, events)
     # Special accesses have AppOps/policy semantics beyond PackageManager grants.
     for key in ('enabled_accessibility_services', 'enabled_notification_listeners'):

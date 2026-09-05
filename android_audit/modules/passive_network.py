@@ -24,8 +24,11 @@ def run(c):
             'http.request or ftp or telnet or smtp or pop or imap', '-T', 'fields',
             '-e', 'frame.number', '-e', 'ip.src', '-e', 'ipv6.src', '-e', 'tcp.dstport',
             '-e', '_ws.col.Protocol'], 'cleartext_protocols')
+        c.check('cleartext_protocol_heuristics', value is not None)
         if value and value.strip():
-            c.finding('Potential cleartext application traffic', 'Protocol candidates found; inspect packets to distinguish cleartext payload from STARTTLS negotiation.', 'medium')
+            frames = [line.split()[0] for line in value.splitlines() if line.split() and line.split()[0].isdigit()]
+            c.finding('HW-NET-003', 'Protocol candidates found; inspect packets to distinguish cleartext payload from STARTTLS negotiation.', 'medium', evidence=[*c.latest_evidence, {'path': record['path'], 'locator': {'frames': frames}}])
     else:
+        c.check('cleartext_protocol_heuristics', False, reason='Host tshark unavailable.')
         c.note('Install host tshark to analyze captured protocols; PCAP retained.')
     c.note('Linux any covers visible interfaces in this network namespace, not offloaded traffic or other namespaces. No decryption; protocol heuristics are incomplete. A timeout exit can be expected for a bounded capture; validate PCAP completeness.')

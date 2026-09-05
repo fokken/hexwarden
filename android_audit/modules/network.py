@@ -28,12 +28,18 @@ def run(c):
                 command = 'netstat -lntu'
                 c.note('ss unavailable; listener evidence uses netstat without process attribution.')
         value = c.shell(command, label)
+        if label == 'listeners':
+            recognized = bool(value) and any(line.split() and line.split()[0] in ('Netid', 'tcp', 'tcp6', 'udp', 'udp6') for line in value.splitlines())
+            c.check('wildcard_listener_heuristic', recognized and command.startswith('ss '),
+                    reason='Requires ss output; fallback netstat is retained for manual review.' if not command.startswith('ss ') else None)
+        if label in ('ipv4_forward', 'ipv6_forward'):
+            c.check('ip_forwarding', value is not None and value.strip() in ('0', '1'), scope=label)
         if label == 'listeners' and value:
             listeners = wildcard_listeners(value)
             if listeners:
-                c.finding('Services bound to wildcard addresses', listeners, 'low')
+                c.finding('HW-NET-001', listeners, 'low')
         if label in ('ipv4_forward', 'ipv6_forward') and value and value.strip() == '1':
-            c.finding('IP forwarding enabled', label + ': review expected routing/tethering role.', 'info', 'high')
+            c.finding('HW-NET-002', label + ': review expected routing/tethering role.', 'info', 'high', asset={'device': c.args.serial, 'stack': label})
     for label, command in (('iptables', 'iptables-save'), ('ip6tables', 'ip6tables-save'), ('nftables', 'nft list ruleset')):
         c.shell(command, label, root=True)
     c.note('Correlate AP/tethering/client roles in Wi-Fi and tethering dumps. Android Auto/vendor projection is not reliably identifiable as CarPlay. Socket visibility, eBPF policy and offloaded firewall paths may be restricted; listening does not prove remote reachability.')

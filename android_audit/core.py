@@ -10,6 +10,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from .findings import RULES, instance_id
 
 ERROR = re.compile(r'permission denied|not found|unknown command|can.t find service|SecurityException|not permitted|inaccessible', re.I)
 STDOUT_ERROR = re.compile(r'^(?:/system/bin/sh:.*|sh:.*|error:.*|exception.*|java\.lang\..*|permission denied.*|.*: permission denied|can.t find service.*|unknown command.*)$', re.I | re.M)
@@ -58,10 +59,12 @@ class Context:
         self.result = None
         self.counter = 0
         self.capabilities = None
+        self.latest_evidence = []
 
     def start(self, name, category):
         self.result = dict(module=name, category=category, status='collected', findings=[],
-                           limitations=[], evidence=[])
+                           limitations=[], evidence=[], analysis_checks=[])
+        self.latest_evidence = []
         self.directory = self.root / 'evidence' / name
         self.directory.mkdir(parents=True)
         return self.result
@@ -71,17 +74,46 @@ class Context:
         if self.result['status'] == 'collected':
             self.result['status'] = 'partial'
 
-    def finding(self, title, detail, severity='info', confidence='medium'):
-        self.result['findings'].append(dict(title=title, detail=detail,
-            severity=severity, confidence=confidence,
-            evidence=[e['path'] for e in self.result['evidence']]))
+    def evidence_for(self, *labels):
+        return [{'path': e['path']} for e in self.result['evidence'] if e.get('label') in labels]
+
+    def check(self, name, evaluated, *, scope=None, evidence=None, reason=None):
+        self.result['analysis_checks'].append({'check_id': name,
+            'status': 'evaluated' if evaluated else 'not_evaluated',
+            'scope': scope, 'reason': reason if evaluated or reason else 'Required input unavailable or could not be interpreted reliably.',
+            'evidence': list(self.latest_evidence if evidence is None else evidence)})
+
+    def finding(self, rule_id, detail, severity='info', confidence='medium', *, asset=None, evidence=None):
+        rule = RULES[rule_id]
+        if asset is None:
+            asset = {'device': getattr(self.args, 'serial', None), 'user': getattr(self.args, 'user', None)}
+            if isinstance(detail, dict):
+                asset.update({k: detail[k] for k in ('package', 'path', 'mac', 'protocol', 'endpoint',
+                    'service_uuid', 'characteristic_uuid', 'handle', 'store', 'name', 'action') if k in detail})
+        refs = list(self.latest_evidence if evidence is None else evidence)
+        finding = dict(rule, id=instance_id(rule_id, asset), asset=asset, detail=detail,
+                       severity=severity, confidence=confidence, evidence=refs,
+                       verification_status='pending' if rule['classification'] == 'review_candidate' else 'observed')
+        for existing in self.result['findings']:
+            if existing['id'] == finding['id']:
+                for ref in refs:
+                    if ref not in existing['evidence']:
+                        existing['evidence'].append(ref)
+                if detail != existing['detail']:
+                    observations = existing.setdefault('additional_observations', [])
+                    if detail not in observations:
+                        observations.append(detail)
+                return
+        self.result['findings'].append(finding)
 
     def skip(self, command, label, reason):
+        self.latest_evidence = []
         self.result.setdefault('skipped_checks', []).append(
             {'label': label, 'command': command, 'reason': reason, 'capability_evidence': 'capabilities.json'})
         self.note(f'{label}: skipped: {reason}')
 
     def command(self, argv, label='command', timeout=None, binary=False, cwd=None):
+        self.latest_evidence = []
         if self.capabilities:
             tool = self.capabilities['host_tools'].get(argv[0], {})
             if tool.get('status') == 'unavailable':
@@ -94,6 +126,7 @@ class Context:
         if cwd is not None:
             meta['cwd'] = str(cwd)
         meta['path'] = str(path.relative_to(self.root))
+        meta['label'] = label
         meta['stderr_path'] = str(path.with_suffix(path.suffix + '.stderr').relative_to(self.root))
         with path.open('rb') as stream:
             sample = stream.read(2 * 1024 * 1024)
@@ -102,6 +135,7 @@ class Context:
         meta['analysis_truncated'] = not binary and path.stat().st_size > len(sample)
         meta['ok'] = meta['returncode'] == 0 and not meta['timed_out'] and not ERROR.search(err) and not STDOUT_ERROR.search(value)
         self.result['evidence'].append(meta)
+        self.latest_evidence = [{'path': meta['path']}]
         if not meta['ok']:
             self.note(f'{label}: command failed, denied, unavailable, or timed out; inspect evidence.')
         if meta['analysis_truncated']:
@@ -111,7 +145,7 @@ class Context:
 
     def shell(self, command, label='shell', root=False, timeout=None, binary=False):
         if root and not self.args.root:
-            self.note(f'{label}: requires --root and existing su privileges.')
+            self.skip(command, label, 'Requires --root and existing privileges.')
             return None
         use_su = root
         if self.capabilities:

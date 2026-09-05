@@ -33,10 +33,11 @@ def run(c):
             value = c.command(['openssl', 'x509', '-in', str(path), '-inform', form,
                                '-noout', '-subject', '-issuer', '-dates', '-fingerprint', '-sha256'],
                               'x509_' + store + '_' + name)
+            c.check('test_ca_subject_heuristic', bool(value) and 'subject=' in value, scope=store + '/' + name)
             if value:
                 certificates.append({'store': store, 'name': name, 'details': value})
                 if re.search(r'(?im)^subject=.*\b(debug|test|testing)\b', value):
-                    c.finding('Possible test/debug trust anchor', {'store': store, 'name': name,
+                    c.finding('HW-CA-001', {'store': store, 'name': name,
                               'details': value}, 'medium', 'low')
     write_json(c.directory / 'certificates.json', certificates)
     c.result['evidence'].append({'path': str((c.directory / 'certificates.json').relative_to(c.root)), 'kind': 'derived'})

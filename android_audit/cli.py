@@ -13,6 +13,7 @@ from uuid import uuid4
 from . import __version__
 from .branding import BANNER
 from .capabilities import discover
+from .reporting import summarize
 from .core import Context, inventory, write_json
 from .integrations import external
 from .modules import registry
@@ -82,10 +83,17 @@ def parser():
 
 
 def report(root, document):
+    summarize(document)
     write_json(root / 'report.json', document)
     lines = ['Hexwarden - Android security audit', 'Run: ' + document['run_id'],
              'Device: ' + str(document.get('device')), 'Status: ' + document['status'],
              'Coverage status is not a security pass/fail.', '']
+    summary = document['summary']
+    lines.extend([f"Findings: {summary['findings']} | Classifications: {json.dumps(summary['by_classification'])}",
+                  f"Automated analysis: {json.dumps(summary['analysis'])}",
+                  summary['interpretation'], ''])
+    if summary['requested_modules_not_started']:
+        lines.append('NOT STARTED: ' + ', '.join(summary['requested_modules_not_started']))
     if document.get('error'):
         lines.append('Error: ' + document['error'])
     if document.get('capabilities'):
@@ -94,9 +102,19 @@ def report(root, document):
                       f"  Android SDK: {device['sdk']}; shell UID: {device['shell_uid']}; root: {device['root']['status']}"])
     for result in document['modules']:
         lines.append(f"[{result['category']}/{result['module']}] {result['status']}")
+        coverage = result['coverage']
+        lines.append(f"  Collection: {coverage['collection']['status']} | Analysis: {coverage['analysis']['status']} | Manual verification: {'required' if coverage['manual_verification']['required'] else 'not flagged'}")
         for finding in result['findings']:
-            lines.append(f"  {finding['severity'].upper()}: {finding['title']}")
+            lines.append(f"  {finding['severity'].upper()} [{finding['classification']}] {finding['rule_id']}: {finding['title']}")
+            lines.append('    ID: ' + finding['id'] + ' | Asset: ' + json.dumps(finding['asset']))
             lines.append('    ' + json.dumps(finding['detail'], ensure_ascii=False))
+            lines.append('    Action: ' + finding['remediation'])
+            lines.append('    Verify: ' + finding['verification'])
+            for ref in finding['evidence']:
+                lines.append('    Evidence: ' + ref['path'] + (' ' + json.dumps(ref['locator']) if 'locator' in ref else ''))
+        for check in result.get('analysis_checks', []):
+            if check['status'] != 'evaluated':
+                lines.append(f"  NOT EVALUATED: {check['check_id']} ({check.get('scope')}) {check.get('reason') or ''}")
         for limitation in result['limitations']:
             lines.append('  COVERAGE: ' + limitation)
         lines.append('')
@@ -156,7 +174,7 @@ def main(argv=None):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
-    document = {'schema_version': 1, 'tool': {'name': 'Hexwarden', 'version': __version__},
+    document = {'schema_version': 2, 'tool': {'name': 'Hexwarden', 'version': __version__},
                 'run_id': run_id, 'started_at': datetime.now(timezone.utc).isoformat(),
                 'device': args.serial, 'status': 'running', 'modules': [], 'requested_modules': selected,
                 'scope': {'user': args.user, 'packages': args.package, 'root': args.root,
@@ -203,6 +221,8 @@ def main(argv=None):
             exit_code = 1
     except KeyboardInterrupt:
         document['status'] = 'interrupted'
+        if document['modules']:
+            document['modules'][-1]['interrupted'] = True
         exit_code = 130
     except Exception as exc:
         document['status'] = 'error'
