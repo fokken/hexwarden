@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hexwarden"
+version = "0.1.0"
+description = "Hexwarden: modular Android security auditing over ADB"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+apps = ["androguard>=4,<5"]
+mobsf = ["requests>=2.32,<3"]
+bluetooth = ["bleak>=3,<4"]
+
+[project.scripts]
+hexwarden = "android_audit.cli:main"
+android-audit = "android_audit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["android_audit*", "hexwarden*"]
