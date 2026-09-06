@@ -91,6 +91,7 @@ def parser():
     scan.add_argument('--drozer-server', default='127.0.0.1')
     scan.add_argument('--drozer-list-path', type=device_path, action='append', default=[], help='agent directory listing target; repeatable')
     scan.add_argument('--drozer-read-path', type=device_path, action='append', default=[], help='agent one-byte read test of a regular file; contents discarded')
+    scan.add_argument('--drozer-readable-path', type=device_path, action='append', default=[], help='run scanner.misc.readablefiles on an agent-visible directory; repeatable')
     scan.add_argument('--drozer-write-dir', type=device_path, action='append', default=[], help='opt in to creating/writing/removing a unique probe file in this directory')
     scan.add_argument('--drozer-entry-limit', type=positive, default=50)
     scan.add_argument('--emba-firmware', type=Path, help='run EMBA against an existing local firmware image/directory')
@@ -171,7 +172,7 @@ def main(argv=None):
             args.signer_policy = load_policy(args.blocked_certs)
         except (OSError, ValueError) as exc:
             p.error(f'invalid --blocked-certs policy: {exc}')
-    if (args.drozer_list_path or args.drozer_read_path or args.drozer_write_dir) and not args.drozer:
+    if (args.drozer_list_path or args.drozer_read_path or args.drozer_write_dir or args.drozer_readable_path) and not args.drozer:
         p.error('Drozer filesystem options require --drozer')
     if args.drozer_entry_limit > 1000:
         p.error('--drozer-entry-limit must not exceed 1000')
@@ -222,7 +223,8 @@ def main(argv=None):
         'read': args.bt_read, 'pair': args.bt_pair, 'connect_classic': args.bt_connect_classic}
     document['scope']['drozer'] = {'enabled': args.drozer, 'server': args.drozer_server,
         'list_paths': args.drozer_list_path or ['/data', '/data/local/tmp', '/sdcard'],
-        'read_paths': args.drozer_read_path, 'write_directories': args.drozer_write_dir,
+        'read_paths': args.drozer_read_path, 'readable_paths': args.drozer_readable_path,
+        'write_directories': args.drozer_write_dir,
         'entry_limit': args.drozer_entry_limit}
     exit_code = 0
     try:

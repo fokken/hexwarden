@@ -29,6 +29,16 @@ def parse_events(text):
     return events
 
 
+def parse_readable_file_paths(text):
+    """Extract path-shaped result rows without retaining file contents."""
+    paths = []
+    for line in (text or '').splitlines():
+        candidate = line.strip().rstrip(':,')
+        if re.fullmatch(r'/[A-Za-z0-9._@+%~/,=-]+', candidate):
+            paths.append(candidate)
+    return sorted(set(paths))
+
+
 def analyze(c, events):
     identity = next((e for e in events if e['kind'] == 'identity'), None)
     if identity is None:
@@ -186,6 +196,17 @@ def run(c):
                          ('--read-path', c.args.drozer_read_path), ('--write-dir', c.args.drozer_write_dir)):
         for value in values:
             args.extend([flag, value])
+    for path in getattr(c.args, 'drozer_readable_path', []):
+        value = module('scanner.misc.readablefiles', [path])
+        paths = parse_readable_file_paths(value or '')
+        c.check('agent_readable_files', value is not None, scope=path, evidence=c.latest_evidence,
+                reason='Readable-file scanner failed or was unavailable.' if value is None else None)
+        if paths:
+            c.finding('HW-DZ-005', {'scan_path': path, 'readable_paths': paths,
+                                    'agent': c.result.get('execution_context')}, 'info', 'high',
+                      asset={'device': c.args.serial, 'path': path, 'agent_uid': c.result.get('execution_context', {}).get('uid')},
+                      evidence=c.latest_evidence)
+        c.note(f'Drozer readable-file scan for {path} reported {len(paths)} path-shaped result(s); contents were not retained by Hexwarden.')
     value = module('hexwarden.audit', args)
     if value is None and c.result['evidence']:
         # A timeout or failed command can still contain completed probe records.

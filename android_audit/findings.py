@@ -4,6 +4,7 @@ import json
 
 # ID, title, classification, recommended action, verification procedure.
 RULE_DATA = [
+('HW-DZ-005', 'Drozer readable-file scanner found agent-readable paths', 'observation', 'Review whether each reported path should be readable by an unprivileged application context and remove sensitive world-readable exposure.', 'Repeat the scan from the intended agent identity, inspect DAC/SELinux and file contents through approved handling; scanner output identifies access candidates, not confidentiality impact.'),
 ('HW-APP-011', 'APK signer matches certificate blocklist', 'review_candidate', 'Review and replace builds signed with unwanted certificates according to deployment policy.', 'Confirm the matched certificate SHA-256 fingerprint and affected APK against the supplied blocklist; review signing-key rotation.'),
 ('HW-DZ-004', 'Shared or system-range application UID', 'observation', 'Review whether packages sharing an identity and its privileges belong in the same trust boundary.', 'Confirm the full UID, effective grants, SELinux domains and running process identities; system UID range and priv-app paths are privilege indicators.'),
 ('HW-APP-009', 'APK signer outside approved certificate policy', 'review_candidate', 'Confirm the expected signer and replace unapproved builds or update the reviewed policy.', 'Compare the verified certificate SHA-256 fingerprints with an independently approved baseline; review signing-key rotation.'),

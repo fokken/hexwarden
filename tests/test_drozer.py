@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from android_audit.core import Context
-from android_audit.drozer_checks import analyze, parse_events, run, report_uids
+from android_audit.drozer_checks import analyze, parse_events, parse_readable_file_paths, run, report_uids
 
 
 def load_probe():
@@ -126,6 +126,10 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(events[0]['shared_packages'], ['system.app', 'peer.app'])
         self.assertEqual(events[-1]['kind'], 'uid_inventory_complete')
 
+    def test_readable_file_parser_keeps_only_path_rows(self):
+        value = 'Scanning /vendor\n/vendor/etc/permissions/platform.xml\ncontents are omitted\n/vendor/etc/security/cacerts/foo.0\n'
+        self.assertEqual(parse_readable_file_paths(value), ['/vendor/etc/permissions/platform.xml', '/vendor/etc/security/cacerts/foo.0'])
+
 
 class OrchestrationTests(unittest.TestCase):
     def test_uid_groups_keep_users_separate_and_prioritize_privileged_peers(self):
@@ -154,7 +158,7 @@ class OrchestrationTests(unittest.TestCase):
         args = argparse.Namespace(timeout=1, integration_timeout=2, drozer_bin='drozer', user=0,
             drozer_server='127.0.0.1', package=['test.app'], max_apps=None,
             drozer_entry_limit=50, drozer_list_path=['/data'], drozer_read_path=['/a path/$(literal)'],
-            drozer_write_dir=[])
+            drozer_write_dir=[], drozer_readable_path=[])
         c = Context(args, Path(tmp))
         c.start('drozer', 'integrations')
         return c

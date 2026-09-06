@@ -56,6 +56,11 @@ python3 -m hexwarden scan --drozer --drozer-server 127.0.0.1 \
 # Explicitly test file creation and writing in a selected directory
 python3 -m hexwarden scan --drozer --package com.example.app \
   --drozer-write-dir /data/local/tmp
+
+# Scan selected directories for files readable from the Drozer agent context
+python3 -m hexwarden scan --drozer \
+  --drozer-readable-path /vendor \
+  --drozer-readable-path /system/etc
 ```
 
 The integration discovers available modules using the CLI's `list` command. It runs built-in `app.package.list`, global `app.package.info`, global `app.package.shareduid`, and global component inventory modules `app.activity.info`, `app.service.info`, `app.provider.info` and `app.broadcast.info`, each without a package argument. This collects the complete package/component inventory exposed by the agent. It does not use `app.package.attacksurface` for a single selected package. Missing modules are skipped with a coverage reason. `--package` and `--max-apps` apply to the separate per-package grant/AppOps checks and bundled agent probes; they do not narrow the global inventory modules.
@@ -67,9 +72,10 @@ The bundled `hexwarden.audit` module is likewise invoked through the CLI. A per-
 * Effective `PackageManager.checkPermission` results for requested permissions of the agent and selected packages. Built-in package-info output alone is not treated as granted permissions.
 * Directory-listing attempts against `--drozer-list-path` targets (default `/data`, `/data/local/tmp`, `/sdcard`). There is no recursive scan. Up to `--drozer-entry-limit` names are retained per directory, default 50, maximum 1,000; Android's directory-list API still enumerates the directory internally.
 * A one-byte read attempt against each `--drozer-read-path` regular file, with the byte discarded. Empty files can still demonstrate successful opening. No special devices or FIFOs are opened.
+* The built-in `scanner.misc.readablefiles` module against each explicit `--drozer-readable-path`. This is an opt-in directory scan performed by Drozer in the agent context; it does not recursively copy files or retain file contents. Path-shaped result rows receive `HW-DZ-005`, while the complete raw module output remains evidence. Scan behavior and recursion depend on the installed Drozer module version.
 * Optional `--drozer-write-dir` tests using Java-created unique `hexwarden-*.probe` files. Each probe writes one byte and attempts deletion in a cleanup block. Probe creation is logged immediately; an unconfirmed cleanup is reported. Forced termination can leave a probe behind.
 
-Actual probe outcomes and agent identity are saved in `integrations/drozer/agent-checks.json` and included in findings. UID groups are saved in `evidence/drozer/shared-uids.json`. Full UIDs keep Android users separate. Shared groups and system-range app IDs (below 10,000) generate observations; system-range IDs, observed `/priv-app/` paths and sensitive grants raise their review priority. The helper reports assigned package identities, not live process UIDs, root access or equivalent SELinux privileges. Package visibility can hide peers, and grants are inspected only for the agent and selected packages.
+Actual probe outcomes and agent identity are saved in `integrations/drozer/agent-checks.json` and included in findings. UID groups are saved in `evidence/drozer/shared-uids.json`. Full UIDs keep Android users separate. Shared groups and system-range app IDs (below 10,000) generate observations; system-range IDs, observed `/priv-app/` paths and sensitive grants raise their review priority. The helper reports assigned package identities, not live process UIDs, root access or equivalent SELinux privileges. Package visibility can hide peers, and grants are inspected only for the agent and selected packages. Readable-file scans identify paths accessible to the agent, not necessarily world-readable files or sensitive data.
 
 Access successes are informational observations, not automatically vulnerabilities. ADB separately collects package AppOps, accessibility/notification-listener settings and device policy. Package grants alone do not prove AppOps authorization or successful use of a privileged API. The agent's Android user may differ from `--user`; that mismatch is reported. Permission maps, APK signer policy and agent grants remain separate evidence; they are not automatically merged into an effective authorization verdict.
 
