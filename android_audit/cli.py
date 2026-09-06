@@ -74,7 +74,7 @@ def parser():
     scan.add_argument('--bt-pair', action='store_true', help='request BLE pairing; may prompt and create a persistent bond')
     scan.add_argument('--bt-connect-classic', action='store_true', help='connect then close advertised RFCOMM/L2CAP endpoints; no payloads')
     scan.add_argument('--extract-apks', action='store_true')
-    scan.add_argument('--approved-certs', type=Path, help='JSON SHA-256 signer allowlist; requires app_extraction and --extract-apks')
+    scan.add_argument('--blocked-certs', type=Path, help='JSON SHA-256 signing-certificate blocklist; requires app_extraction and --extract-apks')
     scan.add_argument('--package', action='append', default=[], help='restrict package analysis; repeatable')
     scan.add_argument('--max-apps', type=positive, help='optional package count cap; default no cap')
     scan.add_argument('--mobsf-url', help='explicitly upload extracted APKs to this MobSF URL')
@@ -155,14 +155,14 @@ def main(argv=None):
     if not selected:
         p.error('selection contains no modules')
     args.signer_policy = None
-    if args.approved_certs:
+    if args.blocked_certs:
         if not args.extract_apks or 'app_extraction' not in selected:
-            p.error('--approved-certs requires --extract-apks and app_extraction')
+            p.error('--blocked-certs requires --extract-apks and app_extraction')
         from .app_trust import load_policy
         try:
-            args.signer_policy = load_policy(args.approved_certs)
+            args.signer_policy = load_policy(args.blocked_certs)
         except (OSError, ValueError) as exc:
-            p.error(f'invalid --approved-certs policy: {exc}')
+            p.error(f'invalid --blocked-certs policy: {exc}')
     if (args.drozer_list_path or args.drozer_read_path or args.drozer_write_dir) and not args.drozer:
         p.error('Drozer filesystem options require --drozer')
     if args.drozer_entry_limit > 1000:

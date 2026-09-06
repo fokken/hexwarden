@@ -15,16 +15,16 @@ def fingerprint(value):
 
 def load_policy(path):
     value = json.loads(path.read_text())
-    if not isinstance(value, dict) or set(value) - {'default', 'packages'}:
-        raise ValueError('expected an object containing only default and packages')
+    if not isinstance(value, dict) or 'blocked_sha256' not in value or set(value) - {'blocked_sha256', 'packages'}:
+        raise ValueError('expected blocked_sha256 and optional packages; old allowlists must not be reused as blocklists')
     packages = value.get('packages', {})
     if not isinstance(packages, dict) or any(not re.fullmatch(r'[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*', key) for key in packages):
         raise ValueError('packages must map exact package names to fingerprint lists')
     def normalize(values):
         if not isinstance(values, list):
-            raise ValueError('each allowlist must be a list of certificate fingerprints')
+            raise ValueError('each blocklist must be a list of certificate fingerprints')
         return sorted({fingerprint(item) for item in values})
-    return {'default': normalize(value.get('default', [])),
+    return {'blocked_sha256': normalize(value['blocked_sha256']),
             'packages': {key: normalize(items) for key, items in packages.items()}}
 
 
@@ -44,44 +44,45 @@ def parse_signature(output):
     return {'status': 'verified' if digests else 'unparsed', 'sha256': digests}
 
 
-def signer_status(signature, allowed):
+def signer_status(signature, blocked):
     if signature.get('status') != 'verified' or not signature.get('sha256'):
         return 'not_evaluated'
-    return 'approved' if set(signature['sha256']) <= set(allowed) else 'unapproved'
+    return 'blocked' if set(signature['sha256']) & set(blocked) else 'no_match'
 
 
 def report_signers(c, apps):
     policy = getattr(c.args, 'signer_policy', None)
     if policy is None:
-        c.check('approved_signers', False, evidence=[], reason='No --approved-certs policy supplied.')
+        c.check('blocked_signers', False, evidence=[], reason='No --blocked-certs policy supplied.')
         return
-    policy_path = c.directory / 'approved-certs.json'
+    policy_path = c.directory / 'blocked-certs.json'
     write_json(policy_path, policy)
     policy_ref = {'path': str(policy_path.relative_to(c.root)), 'kind': 'policy'}
     c.result['evidence'].append(policy_ref)
     rows = []
     if not apps:
-        c.check('approved_signers', False, evidence=[policy_ref], reason='No packages collected.')
+        c.check('blocked_signers', False, evidence=[policy_ref], reason='No packages collected.')
     for app in apps:
-        allowed = policy['packages'].get(app['package'], policy['default'])
+        blocked = sorted(set(policy['blocked_sha256']) | set(policy['packages'].get(app['package'], [])))
         if not app['apks']:
-            c.check('approved_signers', False, scope=app['package'], evidence=[], reason='No APKs extracted.')
+            c.check('blocked_signers', False, scope=app['package'], evidence=[], reason='No APKs extracted.')
         for apk in app['apks']:
             signature = apk.get('signature', {})
-            status = signer_status(signature, allowed)
+            status = signer_status(signature, blocked)
             row = {'package': app['package'], 'apk': apk['path'], 'status': status,
-                   'signature': signature, 'allowed_sha256': allowed}
+                   'signature': signature, 'blocked_sha256': blocked,
+                   'matched_sha256': sorted(set(signature.get('sha256', [])) & set(blocked)) if status == 'blocked' else []}
             rows.append(row)
             refs = signature.get('evidence', []) + [policy_ref]
-            c.check('approved_signers', status != 'not_evaluated',
+            c.check('blocked_signers', status != 'not_evaluated',
                     scope={'package': app['package'], 'apk': apk['path']}, evidence=refs,
                     reason='Signature verification or fingerprint extraction unavailable.' if status == 'not_evaluated' else None)
-            if status == 'unapproved':
-                c.finding('HW-APP-009', row, 'medium', 'high',
+            if status == 'blocked':
+                c.finding('HW-APP-011', row, 'medium', 'high',
                           asset={'device': c.args.serial, 'package': app['package'], 'apk': apk['path']}, evidence=refs)
     path = c.directory / 'signer-policy.json'
     write_json(path, rows)
     c.result['evidence'].append({'path': str(path.relative_to(c.root)), 'kind': 'derived'})
-    c.note('Signer approval is per extracted APK and requires every reported current signer to be allowed. '
-           'Package overrides replace the default list. Rotation lineage, device-specific signer selection '
-           'and missing splits require review; approval does not establish application safety.')
+    c.note('Signer blocklist checks flag any matching verified current signer per extracted APK. '
+           'Package entries add to the global blocklist. Rotation lineage, device-specific signer selection '
+           'and missing splits require review; no match does not establish signer trust or application safety.')

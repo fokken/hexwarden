@@ -14,7 +14,7 @@ python3 -m hexwarden scan --modules app_extraction --extract-apks \
   --mobsf-url http://127.0.0.1:8000 --package com.example.app
 ```
 
-Responses are saved under `integrations/mobsf/<package>-<apk-index>/` as `upload.json`, `scan.json` and `report_json.json`. The adapter requests the report once; it does not poll queued scans or validate report completeness. Inspect responses from asynchronous deployments manually. External results are retained as separate JSON evidence, not normalized into native findings. Hexwarden's [permission correlation and approved signer checks](../README.md#application-trust-and-permission-correlation) complement this broader analysis.
+Responses are saved under `integrations/mobsf/<package>-<apk-index>/` as `upload.json`, `scan.json` and `report_json.json`. The adapter requests the report once; it does not poll queued scans or validate report completeness. Inspect responses from asynchronous deployments manually. External results are retained as separate JSON evidence, not normalized into native findings. Hexwarden's [permission correlation and certificate blocklist checks](../README.md#application-trust-and-permission-correlation) complement this broader analysis.
 
 ## Drozer
 

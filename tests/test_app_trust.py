@@ -1,4 +1,6 @@
 import argparse
+from contextlib import redirect_stderr
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -14,19 +16,32 @@ A, B = 'ab' * 32, 'cd' * 32
 
 
 class SignerTests(unittest.TestCase):
+    def test_cli_blocklist_option_and_prerequisites(self):
+        from android_audit.cli import main, parser
+        args = parser().parse_args(['scan', '--blocked-certs', 'blocked.json'])
+        self.assertEqual(args.blocked_certs, Path('blocked.json'))
+        for argv in (['scan', '--approved-certs', 'old.json'],
+                     ['scan', '--blocked-certs', 'blocked.json'],
+                     ['scan', '--extract-apks', '--modules', 'custom_permissions', '--blocked-certs', 'blocked.json']):
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as result:
+                main(['--no-banner', *argv])
+            self.assertEqual(result.exception.code, 2)
+
     def test_only_certificate_digest_and_successful_verification(self):
         text = f'Signer #1 certificate SHA-256 digest: {A}\nSigner #1 public key SHA-256 digest: {B}\nSource Stamp Signer certificate SHA-256 digest: {B}\n'
         self.assertEqual(parse_signature(text)['sha256'], [A])
         self.assertEqual(signer_status(parse_signature(None), [A]), 'not_evaluated')
         self.assertEqual(signer_status(parse_signature('Verified'), [A]), 'not_evaluated')
 
-    def test_all_signers_required(self):
+    def test_any_blocked_signer_matches(self):
         signature = parse_signature(f'Number of signers: 2\nSigner #1 certificate SHA-256 digest: {A}\nSigner #2 certificate SHA-256 digest: {B}\n')
-        self.assertEqual(signer_status(signature, [A]), 'unapproved')
-        self.assertEqual(signer_status(signature, [A, B]), 'approved')
-        self.assertEqual(signer_status(signature, []), 'unapproved')
+        self.assertEqual(signer_status(signature, [A]), 'blocked')
+        self.assertEqual(signer_status(signature, [B]), 'blocked')
+        self.assertEqual(signer_status(signature, [A, B]), 'blocked')
+        self.assertEqual(signer_status(signature, []), 'no_match')
+        self.assertEqual(signer_status(signature, ['ef' * 32]), 'no_match')
 
-    def test_partial_or_malformed_signers_never_approved(self):
+    def test_partial_or_malformed_signers_not_evaluated(self):
         for suffix in ('Signer #2 certificate SHA-256 digest: nope\n', ''):
             signature = parse_signature(f'Number of signers: 2\nSigner #1 certificate SHA-256 digest: {A}\n' + suffix)
             self.assertEqual(signer_status(signature, [A]), 'not_evaluated')
@@ -34,28 +49,32 @@ class SignerTests(unittest.TestCase):
     def test_policy_validation_and_normalization(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'policy.json'
-            path.write_text(json.dumps({'default': [':'.join(['AB'] * 32)], 'packages': {'test.app': []}}))
-            self.assertEqual(load_policy(path), {'default': [A], 'packages': {'test.app': []}})
-            for value in ([], {'defaults': []}, {'default': ['bad']}, {'packages': []}, {'default': A}):
+            path.write_text(json.dumps({'blocked_sha256': [':'.join(['AB'] * 32)], 'packages': {'test.app': []}}))
+            self.assertEqual(load_policy(path), {'blocked_sha256': [A], 'packages': {'test.app': []}})
+            for value in ([], {}, {'default': [A]}, {'blocked_sha256': ['bad']}, {'blocked_sha256': [], 'packages': []}, {'blocked_sha256': A}):
                 path.write_text(json.dumps(value))
                 with self.assertRaises(ValueError):
                     load_policy(path)
 
-    def test_overrides_splits_and_report_evidence(self):
+    def test_additive_package_blocks_splits_and_report_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             c = Context(argparse.Namespace(serial='d', user=0,
-                signer_policy={'default': [A], 'packages': {'test.app': [B]}}), Path(tmp))
+                signer_policy={'blocked_sha256': [A], 'packages': {'test.app': [B]}}), Path(tmp))
             c.start('app_extraction', 'running_applications')
             apps = [{'package': 'test.app', 'apks': [
                 {'path': 'base.apk', 'signature': {'status': 'verified', 'sha256': [B]}},
                 {'path': 'split.apk', 'signature': {'status': 'verified', 'sha256': [A]}},
-                {'path': 'unknown.apk', 'signature': {'status': 'unavailable'}}]}]
+                {'path': 'unknown.apk', 'signature': {'status': 'unavailable'}}]},
+                {'package': 'other.app', 'apks': [
+                    {'path': 'other.apk', 'signature': {'status': 'verified', 'sha256': [B]}}]}]
             report_signers(c, apps)
             rows = json.loads((c.directory / 'signer-policy.json').read_text())
-            self.assertEqual([x['status'] for x in rows], ['approved', 'unapproved', 'not_evaluated'])
-            self.assertEqual(len(c.result['findings']), 1)
-            self.assertEqual(c.result['findings'][0]['detail']['apk'], 'split.apk')
-            self.assertTrue((c.directory / 'approved-certs.json').exists())
+            self.assertEqual([x['status'] for x in rows], ['blocked', 'blocked', 'not_evaluated', 'no_match'])
+            self.assertEqual(len(c.result['findings']), 2)
+            self.assertEqual(rows[0]['matched_sha256'], [B])
+            self.assertEqual(rows[1]['matched_sha256'], [A])
+            self.assertTrue(all(f['rule_id'] == 'HW-APP-011' for f in c.result['findings']))
+            self.assertTrue((c.directory / 'blocked-certs.json').exists())
 
 
 class PermissionMapTests(unittest.TestCase):

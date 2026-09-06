@@ -59,7 +59,7 @@ Install only the dependencies for the checks you plan to use:
 | Capability | Python extra | Additional requirement |
 |---|---|---|
 | Decode manifests and correlate permissions | `apps` (Androguard) | `--extract-apks` |
-| Verify APK signatures and approved signers | None | `--extract-apks`; host `apksigner` and Java; `--approved-certs` for policy comparison |
+| Verify APK signatures and flag unwanted signers | None | `--extract-apks`; host `apksigner` and Java; `--blocked-certs` for policy comparison |
 | Inspect trusted certificates | None | Host `openssl` |
 | Analyze captured traffic | None | Host `tshark`; device-side `tcpdump` and `timeout` for capture |
 | BLE discovery and reads | `bluetooth` (Bleak) | Bluetooth adapter, BlueZ service and host D-Bus access |
@@ -122,27 +122,27 @@ The banner goes to stderr; `--no-banner` suppresses it. The original `android-au
 
 ## Application trust and permission correlation
 
-Use MobSF for broad APK analysis (`--mobsf-url`). Hexwarden correlates installed-app permissions and checks verified signers against your approved certificate policy:
+Use MobSF for broad APK analysis (`--mobsf-url`). Hexwarden correlates installed-app permissions and flags verified signers matching your certificate blocklist:
 
 ```sh
 hexwarden scan --modules app_extraction custom_permissions --extract-apks \
-  --approved-certs approved-certs.json --package com.example.app
+  --blocked-certs blocked-certs.json --package com.example.app
 ```
 
-Save the following as `approved-certs.json` before running the command. The policy has a default allowlist and optional exact-package overrides. Replace the example fingerprint with an independently approved **certificate SHA-256** fingerprint (not the APK hash or public-key hash):
+Save the following as `blocked-certs.json` before running the command. Replace the example with the **certificate SHA-256** fingerprint of an unwanted signer (not the APK hash or public-key hash). Add more fingerprints to block additional certificates:
 
 ```json
 {
-  "default": [],
-  "packages": {
-    "com.example.app": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]
-  }
+  "blocked_sha256": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"],
+  "packages": {}
 }
 ```
 
-Overrides replace the default list. Empty lists approve no signers; every reported signer on every extracted base/split APK must be allowed. Fingerprints accept upper/lowercase hexadecimal and optional colon separators. Missing tools, failed verification and unrecognized output are **not evaluated**, never approved. Use the distribution package or Android SDK Build Tools described above and put `apksigner` on PATH; certificate comparison does not require Androguard. Signing-key rotation and device-specific signer selection still need review. The normalized policy and per-APK results are saved under `evidence/app_extraction/` as `approved-certs.json` and `signer-policy.json`. Verification uses Android's [apksigner](https://developer.android.com/tools/apksigner).
+`blocked_sha256` applies to every collected APK. Optional `packages` entries map exact package names to additional blocked fingerprints; they cannot cancel global blocks. Any matching verified signer on a base/split APK produces a finding. An empty blocklist produces no matches. Fingerprints accept upper/lowercase hexadecimal and optional colon separators. Missing tools, failed verification and unrecognized output are **not evaluated**. A `no_match` result does not establish trust or safety. Use the distribution package or Android SDK Build Tools described above and put `apksigner` on PATH; certificate comparison does not require Androguard. Signing-key rotation and device-specific signer selection still need review. The normalized policy and per-APK results, including matched fingerprints, are saved under `evidence/app_extraction/` as `blocked-certs.json` and `signer-policy.json`. Verification uses Android's [apksigner](https://developer.android.com/tools/apksigner).
 
-`--approved-certs` requires `--extract-apks` and selection of `app_extraction`. Without a policy, signature output is still collected when `apksigner` is available, but signer approval is not evaluated. The policy applies only to collected APKs; it does not require listed packages to be installed or prove that every split was extracted.
+`--blocked-certs` requires `--extract-apks` and selection of `app_extraction`. Without a policy, signature output is still collected when `apksigner` is available, but blocklist matching is not evaluated. The policy applies only to collected APKs; it does not require listed packages to be installed or prove that every split was extracted. This is an audit check; Hexwarden does not uninstall or prevent installation of matching apps.
+
+The former `--approved-certs` option has been removed. Old policies containing `default` are rejected: create a new blocklist of unwanted certificates rather than copying trusted certificates from an allowlist.
 
 `custom_permissions` requires the `apps` extra and saves `permission-correlation.json`: declaring apps, requesting apps (including SDK conditions), and guarded components, including provider read/write and path permissions. It flags weak permissions guarding enabled exported components and multiple declaring packages. Missing declarations are scoped inventory gaps, not vulnerabilities. Run without `--package` for wider correlation. Requests are not grants; split merging, runtime checks and effective ownership require validation. See Android's [custom permission documentation](https://developer.android.com/guide/topics/permissions/defining).
 

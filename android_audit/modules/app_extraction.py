@@ -14,4 +14,4 @@ def run(c):
         if c.args.mobsf_url:
             for apk in app['apks']:
                 mobsf_scan(c, c.root / apk['path'])
-    c.note('Extraction covers installed base/split APKs visible to ADB, not private app data or uninstalled firmware apps. Valid signing does not establish signer trust; compare fingerprints against approved baselines.')
+    c.note('Extraction covers installed base/split APKs visible to ADB, not private app data or uninstalled firmware apps. Valid signing and absence from a certificate blocklist do not establish signer trust.')

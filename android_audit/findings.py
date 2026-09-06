@@ -4,6 +4,7 @@ import json
 
 # ID, title, classification, recommended action, verification procedure.
 RULE_DATA = [
+('HW-APP-011', 'APK signer matches certificate blocklist', 'review_candidate', 'Review and replace builds signed with unwanted certificates according to deployment policy.', 'Confirm the matched certificate SHA-256 fingerprint and affected APK against the supplied blocklist; review signing-key rotation.'),
 ('HW-DZ-004', 'Shared or system-range application UID', 'observation', 'Review whether packages sharing an identity and its privileges belong in the same trust boundary.', 'Confirm the full UID, effective grants, SELinux domains and running process identities; system UID range and priv-app paths are privilege indicators.'),
 ('HW-APP-009', 'APK signer outside approved certificate policy', 'review_candidate', 'Confirm the expected signer and replace unapproved builds or update the reviewed policy.', 'Compare the verified certificate SHA-256 fingerprints with an independently approved baseline; review signing-key rotation.'),
 ('HW-APP-010', 'Custom permission relationship requires review', 'review_candidate', 'Review weak permissions guarding exported components and conflicting permission declarations.', 'Confirm effective ownership and grants through PackageManager and test authorization from the Drozer agent context.'),

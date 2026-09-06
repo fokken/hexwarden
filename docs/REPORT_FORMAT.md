@@ -58,13 +58,15 @@ Paths below are relative to the run directory. Findings remain in both `report.t
 
 | Artifact | Contents |
 |---|---|
-| `evidence/app_extraction/approved-certs.json` | Normalized policy snapshot when `--approved-certs` is supplied |
-| `evidence/app_extraction/signer-policy.json` | Per extracted APK: package, path, signature evidence, allowed fingerprints and policy status |
+| `evidence/app_extraction/blocked-certs.json` | Normalized policy snapshot when `--blocked-certs` is supplied |
+| `evidence/app_extraction/signer-policy.json` | Per extracted APK: package, path, signature evidence, effective `blocked_sha256`, `matched_sha256` and policy status |
 | `evidence/custom_permissions/permission-correlation.json` | Permission declarations, requesters, protected components and scoped declaration status |
 | `integrations/drozer/agent-checks.json` | Agent identity and individual probe events |
 | `evidence/drozer/shared-uids.json` | Full UID groups, visible packages, privilege indicators and source event references |
 
-Signer policy status is `approved`, `unapproved`, or `not_evaluated`. Approval requires successful signature verification and all parsed current certificate fingerprints to be allowed. `HW-APP-009` reports unapproved signers; unavailable verification is a coverage gap. Missing APKs have not-evaluated checks rather than fabricated per-APK rows. Approval does not establish scan-wide completeness or application safety.
+Signer policy status is `blocked`, `no_match`, or `not_evaluated`. Matching requires successful signature verification; any parsed current certificate fingerprint in the global or applicable package blocklist yields `blocked`. `HW-APP-011` reports the match; unavailable verification is a coverage gap. Missing APKs have not-evaluated checks rather than fabricated per-APK rows. No match does not establish signer trust, scan-wide completeness or application safety.
+
+Blocklist checks use `blocked_signers`. The previous allowlist check `approved_signers`, artifact `approved-certs.json`, field `allowed_sha256` and statuses `approved`/`unapproved` are no longer emitted. `HW-APP-009` retains its historical allowlist meaning and is not reused for blocklist findings. The overall report schema remains version 2; consumers of the signer-specific artifact must handle this policy change.
 
 Permission declaration status is `observed`, `multiple_declarers`, or `not_observed_in_scope`. It describes decoded manifests, not effective PackageManager ownership or permission grants. `HW-APP-010` flags weak guards on enabled exported components or multiple declaring packages. `HW-DZ-004` records shared or system-range UIDs as observations; severity prioritizes review rather than confirming a vulnerability.
 
