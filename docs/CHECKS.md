@@ -33,7 +33,7 @@ This is the inventory of Hexwarden's built-in collection and analysis. A success
 
 | Module | Collected information | Automated checks and findings | Limits |
 |---|---|---|---|
-| `bluetooth` | Android Bluetooth manager/service/sysfs inventory; optional host adapter state, Classic SDP services, RFCOMM/L2CAP endpoints, BLE services/characteristics/descriptors/properties, explicit write-probe metadata and payload journal | `HW-BT-001` advertised Classic services; `HW-BT-002` successful Classic endpoint connections; `HW-BT-003` advertised BLE write support; `HW-BT-004` readable BLE characteristics; `HW-BT-005` accepted explicit BLE write probe | Host MAC is user-supplied and not tied to ADB; existing bonds affect results; writes/fuzzing are opt-in, target-scoped and bounded; no notifications or application protocol payloads are sent |
+| `bluetooth` | Android Bluetooth manager/service/sysfs inventory; optional host adapter state, Classic SDP services, RFCOMM/L2CAP endpoints and explicit payloads, BLE services/characteristics/descriptors/properties, notification events and write-probe metadata | `HW-BT-001` advertised Classic services; `HW-BT-002` successful Classic endpoint connections; `HW-BT-003` advertised BLE write support; `HW-BT-004` readable BLE characteristics; `HW-BT-005` accepted explicit BLE write probe; `HW-BT-006` accepted Classic payload; `HW-BT-007` accepted BLE notification subscription | Host MAC is user-supplied and not tied to ADB; existing bonds affect results; payloads and notification subscriptions are opt-in, target-scoped and bounded; notification values remain raw evidence |
 
 ## Running applications
 

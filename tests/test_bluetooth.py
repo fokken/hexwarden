@@ -101,6 +101,11 @@ class BLETests(unittest.IsolatedAsyncioTestCase):
                 return b'sensitive-value'
             async def write_gatt_char(self, char, payload, response=True):
                 owner.calls.append(('write', char.handle, bytes(payload), response))
+            async def start_notify(self, char, callback):
+                owner.calls.append(('notify_start', char.handle))
+                callback(char, b'event')
+            async def stop_notify(self, char):
+                owner.calls.append(('notify_stop', char.handle))
         return Scanner, Client
 
     async def test_discovery_does_not_read_or_pair(self):
@@ -158,6 +163,20 @@ class BLETests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('payload_hex', result['writes'][1])
         self.assertTrue(any(call[0] == 'write' for call in self.calls))
 
+    async def test_notification_subscription_is_bounded_and_recorded(self):
+        scanner, client = self.dependencies()
+        # Add an indication property to the fixture characteristic.
+        class NotifyClient(client):
+            def __init__(self, device, **kwargs):
+                super().__init__(device, **kwargs)
+                self.services[0].characteristics[0].properties.append('notify')
+        result = await enumerate_ble(MAC, 2, scanner=scanner, client_factory=NotifyClient,
+                                     notify=True, notify_seconds=.01)
+        self.assertEqual(result['status'], 'collected')
+        self.assertEqual(result['notifications'][0]['status'], 'subscribed')
+        self.assertEqual(result['notifications'][0]['events'][0]['length'], 5)
+        self.assertTrue(any(call[0] == 'notify_stop' for call in self.calls))
+
 
 class HostTests(unittest.TestCase):
     def test_socket_closes_without_sending(self):
@@ -176,6 +195,28 @@ class HostTests(unittest.TestCase):
         self.assertEqual(result['status'], 'connected')
         self.assertEqual(calls, [('timeout', 2), ('connect', (MAC, 7)), 'closed'])
         self.assertFalse(result['payload_sent'])
+
+    def test_classic_payload_is_sent_and_recorded(self):
+        calls = []
+        class Connection:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def settimeout(self, timeout):
+                pass
+            def connect(self, address):
+                calls.append(('connect', address))
+            def sendall(self, payload):
+                calls.append(('send', bytes(payload)))
+            def recv(self, size):
+                return b'ok'
+        with patch('android_audit.bluetooth_host.sys.platform', 'linux'):
+            result = connect_classic(MAC, 'rfcomm', 7, 2, payloads=[b'probe'],
+                                     socket_factory=lambda *args: Connection())
+        self.assertEqual(result['payloads'][0]['status'], 'accepted')
+        self.assertEqual(result['payloads'][0]['response_length'], 2)
+        self.assertEqual(calls[-1], ('send', b'probe'))
 
     def test_module_reports_candidates_without_read_values(self):
         with tempfile.TemporaryDirectory() as tmp:

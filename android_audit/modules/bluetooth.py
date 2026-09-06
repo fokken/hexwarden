@@ -95,16 +95,29 @@ def host_tests(c):
                     if len(endpoints) > 32:
                         c.note('Classic connection probes capped at 32 advertised endpoints.')
                     for protocol, endpoint in endpoints[:32]:
-                        result = worker(c, protocol, ['--endpoint', str(endpoint)], timeout=min(c.args.bt_timeout, 5))
+                        extra = ['--endpoint', str(endpoint)]
+                        for payload in getattr(c.args, 'bt_classic_payload', []):
+                            extra += ['--payload', payload]
+                        result = worker(c, protocol, extra, timeout=min(c.args.bt_timeout, 5))
                         c.check('classic_connection_probe', bool(result) and result.get('status') == 'connected', scope={'mac': mac, 'protocol': protocol, 'endpoint': endpoint})
                         if result and result.get('status') == 'connected':
-                            c.finding('HW-BT-002', result, 'info', 'high')
+                            connection_detail = {key: value for key, value in result.items() if key != 'payloads'}
+                            c.finding('HW-BT-002', connection_detail, 'info', 'high')
+                            for payload in result.get('payloads', []):
+                                if payload.get('status') == 'accepted':
+                                    c.finding('HW-BT-006', {
+                                        'mac': mac, 'protocol': protocol, 'endpoint': endpoint,
+                                        'payload_length': payload['payload_length'],
+                                        'payload_sha256': payload['payload_sha256'],
+                                        'response_length': payload.get('response_length')}, 'info', 'high')
                         elif result:
                             c.note(f'{protocol} endpoint {endpoint}: connection failed or unavailable; inspect worker evidence, not proof of filtering/authentication.')
         else:
             c.note('Classic service discovery requires Linux and host sdptool (BlueZ tools).')
     if c.args.bt_mode in ('both', 'ble'):
         extra = (['--read'] if c.args.bt_read else []) + (['--pair'] if c.args.bt_pair else [])
+        if getattr(c.args, 'bt_notify', False):
+            extra += ['--notify', '--notify-seconds', str(getattr(c.args, 'bt_notify_seconds', 3))]
         write_plan_refs = []
         write_targets = getattr(c.args, 'bt_write_target', [])
         write_values = getattr(c.args, 'bt_write_payload', [])
@@ -164,6 +177,13 @@ def host_tests(c):
                     c.finding('HW-BT-005', detail, 'info', 'high', evidence=refs)
                 else:
                     c.note(f"BLE write probe rejected for {write['target']}; this is evidence for the current host context only.")
+            for notification in result.get('notifications', []):
+                detail = {'mac': mac, 'service_uuid': notification['service_uuid'],
+                          'characteristic_uuid': notification['characteristic_uuid'],
+                          'handle': notification['handle'], 'status': notification['status'],
+                          'event_count': len(notification.get('events', []))}
+                if notification['status'] == 'subscribed':
+                    c.finding('HW-BT-007', detail, 'info', 'high')
     if shutil.which('bluetoothctl') and sys.platform.startswith('linux'):
         c.command(['bluetoothctl', 'info', mac], 'host_target_after')
     c.note('Host tests use the default adapter and its existing bonds. Successful reads/connections do not prove unauthenticated access. GATT write flags are advertised capabilities; explicit write probes and bounded deterministic fuzzing require user-supplied targets and are limited to 64 payloads of 64 bytes or less. SDP may omit hidden/non-browsable endpoints. Target MAC is user-supplied and not verified against the ADB device; BLE privacy may require a different/current address.')

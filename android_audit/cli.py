@@ -112,7 +112,11 @@ def parser():
     scan.add_argument('--bt-timeout', type=positive, default=30, help='deadline per host Bluetooth discovery phase (seconds)')
     scan.add_argument('--bt-read', action='store_true', help='attempt reads of BLE characteristics advertising read support')
     scan.add_argument('--bt-pair', action='store_true', help='request BLE pairing; may prompt and create a persistent bond')
-    scan.add_argument('--bt-connect-classic', action='store_true', help='connect then close advertised RFCOMM/L2CAP endpoints; no payloads')
+    scan.add_argument('--bt-connect-classic', action='store_true', help='connect advertised RFCOMM/L2CAP endpoints; payloads require --bt-classic-payload')
+    scan.add_argument('--bt-classic-payload', action='append', type=bluetooth_payload, default=[], metavar='HEX',
+                      help='explicit payload for Classic RFCOMM/L2CAP probes; repeatable')
+    scan.add_argument('--bt-notify', action='store_true', help='subscribe to BLE notify/indicate characteristics for a bounded interval')
+    scan.add_argument('--bt-notify-seconds', type=positive, default=3, help='BLE notification subscription interval (default 3 seconds)')
     scan.add_argument('--bt-write-target', action='append', type=bluetooth_write_target, default=[], metavar='SERVICE/CHARACTERISTIC',
                       help='explicit BLE characteristic target for authorization writes; repeatable')
     scan.add_argument('--bt-write-payload', action='append', type=bluetooth_payload, default=[], metavar='HEX',
@@ -251,12 +255,18 @@ def main(argv=None):
         p.error('--drozer-entry-limit must not exceed 1000')
     if args.bt_mac and 'bluetooth' not in selected:
         p.error('--bt-mac requires selecting the bluetooth module')
-    if (args.bt_read or args.bt_pair or args.bt_connect_classic or args.bt_write_target or args.bt_write_payload or args.bt_fuzz) and not args.bt_mac:
+    if (args.bt_read or args.bt_pair or args.bt_connect_classic or args.bt_classic_payload or args.bt_notify or args.bt_write_target or args.bt_write_payload or args.bt_fuzz) and not args.bt_mac:
         p.error('Bluetooth read/pair/connect options require --bt-mac')
     if (args.bt_read or args.bt_pair) and args.bt_mode == 'classic':
         p.error('--bt-read/--bt-pair require BLE mode')
     if args.bt_connect_classic and args.bt_mode == 'ble':
         p.error('--bt-connect-classic requires classic mode')
+    if args.bt_classic_payload and args.bt_mode == 'ble':
+        p.error('--bt-classic-payload requires classic mode')
+    if args.bt_classic_payload and not args.bt_connect_classic:
+        p.error('--bt-classic-payload requires --bt-connect-classic')
+    if args.bt_notify and args.bt_mode == 'classic':
+        p.error('--bt-notify requires BLE mode')
     if (args.bt_write_target or args.bt_write_payload or args.bt_fuzz) and args.bt_mode == 'classic':
         p.error('BLE write/fuzz options require BLE mode')
     if args.bt_write_payload and not args.bt_write_target:
@@ -314,6 +324,8 @@ def main(argv=None):
     document['scope']['bluetooth'] = {
         'mac': args.bt_mac, 'mode': args.bt_mode, 'timeout': args.bt_timeout,
         'read': args.bt_read, 'pair': args.bt_pair, 'connect_classic': args.bt_connect_classic,
+        'classic_payload_count': len(args.bt_classic_payload), 'notify': args.bt_notify,
+        'notify_seconds': args.bt_notify_seconds,
         'write_targets': args.bt_write_target, 'write_payload_count': len(args.bt_write_payload),
         'fuzz': args.bt_fuzz, 'fuzz_count': args.bt_fuzz_count}
     document['scope']['drozer'] = {'enabled': args.drozer, 'server': args.drozer_server,

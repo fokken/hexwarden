@@ -10,11 +10,12 @@ import json
 import hashlib
 import socket
 import sys
+from datetime import datetime, timezone
 
 
-def connect_classic(mac, protocol, endpoint, timeout, socket_factory=None):
+def connect_classic(mac, protocol, endpoint, timeout, payloads=(), socket_factory=None):
     result = {'mac': mac, 'protocol': protocol, 'endpoint': endpoint,
-              'status': 'error', 'payload_sent': False}
+              'status': 'error', 'payload_sent': False, 'payloads': []}
     if not sys.platform.startswith('linux') or not hasattr(socket, 'AF_BLUETOOTH'):
         result['error'] = 'Classic socket probes require Linux Bluetooth socket support.'
         return result
@@ -26,6 +27,20 @@ def connect_classic(mac, protocol, endpoint, timeout, socket_factory=None):
             connection.settimeout(timeout)
             connection.connect((mac, endpoint))
             result['status'] = 'connected'
+            for payload in payloads:
+                attempt = {'payload_hex': payload.hex(), 'payload_length': len(payload),
+                           'payload_sha256': hashlib.sha256(payload).hexdigest(), 'status': 'pending'}
+                try:
+                    connection.sendall(payload)
+                    attempt['status'] = 'accepted'
+                    result['payload_sent'] = True
+                    try:
+                        attempt['response_length'] = len(connection.recv(4096))
+                    except socket.timeout:
+                        attempt['response_length'] = None
+                except OSError as exc:
+                    attempt.update(status='rejected', error_type=type(exc).__name__, error=str(exc))
+                result['payloads'].append(attempt)
     except OSError as exc:
         result.update(status='failed', error_type=type(exc).__name__,
                       errno=exc.errno, error=str(exc))
@@ -45,9 +60,11 @@ def fuzz_payloads(count):
 
 
 async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, client_factory=None,
-                        write_targets=(), write_payloads=(), fuzz=False, fuzz_count=16):
+                        write_targets=(), write_payloads=(), fuzz=False, fuzz_count=16,
+                        notify=False, notify_seconds=3):
     result = {'mac': mac, 'status': 'partial', 'pair_requested': pair,
-              'read_requested': read, 'services': [], 'writes': [], 'errors': [],
+              'read_requested': read, 'notify_requested': notify, 'services': [], 'writes': [],
+              'notifications': [], 'errors': [],
               'security_context': 'Host may have existing bonds; link authentication/encryption not independently measured.'}
     if scanner is None or client_factory is None:
         try:
@@ -65,6 +82,7 @@ async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, clie
         result['device'] = {'address': device.address, 'name': device.name}
         async with client_factory(device, timeout=timeout, pair=pair) as client:
             result['connected'] = bool(client.is_connected)
+            notification_chars = []
             target_map = {}
             for target in write_targets:
                 parts = target.split('/', 1)
@@ -79,6 +97,8 @@ async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, clie
                         'advertises_write': bool({'write', 'write-without-response', 'authenticated-signed-writes'} & set(props)),
                         'descriptors': [{'uuid': d.uuid, 'handle': d.handle} for d in char.descriptors]}
                     entry['characteristics'].append(characteristic)
+                    if notify and ({'notify', 'indicate'} & set(props)):
+                        notification_chars.append((service, char, characteristic))
                     target = target_map.get((str(service.uuid).lower(), str(char.uuid).lower()))
                     if target:
                         target_map.pop((str(service.uuid).lower(), str(char.uuid).lower()), None)
@@ -113,12 +133,45 @@ async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, clie
                             characteristic['read'] = {'status': 'success', 'length': len(value), 'hex': bytes(value).hex()}
                         except Exception as exc:
                             characteristic['read'] = {'status': 'failed', 'error_type': type(exc).__name__, 'error': str(exc)}
+            if notify and notification_chars:
+                for service, char, characteristic in notification_chars:
+                    events = []
+                    dropped = [0]
+                    def callback(sender, data, events=events, dropped=dropped, service=service, char=char):
+                        if len(events) >= 256:
+                            dropped[0] += 1
+                            return
+                        value = bytes(data)
+                        events.append({'timestamp': datetime.now(timezone.utc).isoformat(timespec='milliseconds'),
+                                       'service_uuid': service.uuid, 'characteristic_uuid': char.uuid,
+                                       'handle': char.handle, 'length': len(value), 'hex': value[:4096].hex(),
+                                       'truncated': len(value) > 4096})
+                    notification = {'service_uuid': service.uuid, 'characteristic_uuid': char.uuid,
+                                    'handle': char.handle, 'status': 'pending', 'events': events,
+                                    'dropped_events': dropped}
+                    try:
+                        await asyncio.wait_for(client.start_notify(char, callback), min(timeout, 5))
+                        notification['status'] = 'subscribed'
+                    except Exception as exc:
+                        notification.update(status='failed', error_type=type(exc).__name__, error=str(exc))
+                    result['notifications'].append(notification)
+                if any(item['status'] == 'subscribed' for item in result['notifications']):
+                    await asyncio.sleep(min(notify_seconds, max(0.1, timeout / 2)))
+                for item, (_, char, _) in zip(result['notifications'], notification_chars):
+                    if item['status'] == 'subscribed':
+                        try:
+                            await asyncio.wait_for(client.stop_notify(char), min(timeout, 5))
+                        except Exception as exc:
+                            item.update(status='partial', error_type=type(exc).__name__, error=str(exc))
+                    item['dropped_events'] = item['dropped_events'][0]
             for target in target_map.values():
                 result['errors'].append(f'Write target not found in discovered services: {target}')
             result['status'] = 'collected'
             if target_map:
                 result['status'] = 'partial'
             if any(ch.get('read', {}).get('status') == 'failed' for s in result['services'] for ch in s['characteristics']):
+                result['status'] = 'partial'
+            if any(item.get('status') in ('failed', 'partial') for item in result['notifications']):
                 result['status'] = 'partial'
 
     try:
@@ -137,10 +190,13 @@ def main(argv=None):
     parser.add_argument('--endpoint', type=int)
     parser.add_argument('--read', action='store_true')
     parser.add_argument('--pair', action='store_true')
+    parser.add_argument('--payload', action='append', default=[])
     parser.add_argument('--write-target', action='append', default=[])
     parser.add_argument('--write-payload', action='append', default=[])
     parser.add_argument('--fuzz', action='store_true')
     parser.add_argument('--fuzz-count', type=int, default=16)
+    parser.add_argument('--notify', action='store_true')
+    parser.add_argument('--notify-seconds', type=float, default=3)
     args = parser.parse_args(argv)
     if args.mode == 'ble':
         if sys.platform == 'darwin':
@@ -149,9 +205,11 @@ def main(argv=None):
             result = asyncio.run(enumerate_ble(args.mac, args.timeout, args.read, args.pair,
                                                write_targets=args.write_target,
                                                write_payloads=args.write_payload,
-                                               fuzz=args.fuzz, fuzz_count=args.fuzz_count))
+                                               fuzz=args.fuzz, fuzz_count=args.fuzz_count,
+                                               notify=args.notify, notify_seconds=args.notify_seconds))
     else:
-        result = connect_classic(args.mac, args.mode, args.endpoint, args.timeout)
+        result = connect_classic(args.mac, args.mode, args.endpoint, args.timeout,
+                                 payloads=[bytes.fromhex(value) for value in args.payload])
     print(json.dumps(result))
     return 0
 
