@@ -2,7 +2,7 @@
 
 **Inspect the runes. Expose the cracks.**
 
-Hexwarden is a Python CLI for auditing Android devices over ADB. Its **20 modules** cover system hardening, interfaces, networking, wireless and running applications. Each run saves raw evidence, text and JSON reports, and an inventory of artifact hashes.
+Hexwarden is a Python CLI for auditing Android devices over ADB. Its **21 modules** cover system hardening, interfaces, networking, wireless and running applications. Each run saves raw evidence, text and JSON reports, and an inventory of artifact hashes.
 
 [Installation](#installation-linux) · [Usage](#usage) · [Reports](#reports-and-evidence) · [Module guides](#module-guides) · [All checks](docs/CHECKS.md) · [Coverage](docs/PLAN.md)
 
@@ -77,6 +77,22 @@ sudo apt install openssl apksigner tshark bluez radamsa
 ```
 
 On Ubuntu, some optional packages require the Universe repository.
+
+If your distribution does not provide a `radamsa` package, build it from the
+upstream source:
+
+```sh
+sudo apt install build-essential git
+git clone https://gitlab.com/akihe/radamsa.git
+cd radamsa
+make
+sudo make install
+cd ..
+radamsa --version
+```
+
+The source installation and the distribution package provide the same `radamsa`
+executable; use one method, then confirm it is available on `PATH`.
 
 See the [module guides](#module-guides) for tool setup, device requirements and detailed examples.
 

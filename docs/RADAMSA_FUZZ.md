@@ -6,11 +6,26 @@ Hexwarden can run a separate, explicitly targeted Radamsa campaign against a TCP
 or UDP service. Review the `network` module's listener evidence first; the fuzzing
 module never discovers or selects sockets automatically.
 
-Install Radamsa using your distribution package, then provide literal IP targets
-and one or more seed files:
+Install Radamsa using your distribution package, or build it from source if no
+package is available:
 
 ```sh
 sudo apt install radamsa
+```
+
+```sh
+sudo apt install build-essential git
+git clone https://gitlab.com/akihe/radamsa.git
+cd radamsa
+make
+sudo make install
+cd ..
+radamsa --version
+```
+
+Then provide literal IP targets and one or more seed files:
+
+```sh
 hexwarden scan --radamsa-fuzz \
   --radamsa-target 192.0.2.10:9000 \
   --radamsa-protocol tcp \
