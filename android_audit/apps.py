@@ -99,6 +99,8 @@ def collect_apps(c):
     apps = []
     try:
         from androguard.core.apk import APK
+        from androguard.util import set_log
+        set_log("ERROR")
     except ImportError:
         APK = None
     if c.args.extract_apks and APK is None:
