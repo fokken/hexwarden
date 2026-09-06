@@ -72,6 +72,8 @@ Permission declaration status is `observed`, `multiple_declarers`, or `not_obser
 
 ## Coverage
 
+MobSF records a per-APK `mobsf_report` check. Only a report with matching local APK hashes and the expected core analysis sections becomes `external_analysis` evidence. Queue acceptance, task completion, and HTTP success alone do not satisfy that check. `integrations/mobsf/<package>-<apk-index>/status.json` retains the workflow outcome; numbered endpoint responses retain polling evidence. See the [MobSF guide](INTEGRATIONS.md#mobsf) for deadlines, retry behavior and validation limits.
+
 Every audit module has a `coverage` object with independent sections:
 
 **`collection`** counts unique attempted commands, successful commands, failed commands, known skipped commands and truncated outputs. Its status is `completed`, `partial`, `failed`, `skipped`, or `not_performed`. This measures command execution only: exit success does not validate the contents or establish security. Derived artifacts do not inflate command counts.

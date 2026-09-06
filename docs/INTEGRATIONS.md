@@ -11,10 +11,26 @@ Configure a prepared MobSF server and set `MOBSF_API_KEY` in your environment. I
 
 ```sh
 python3 -m hexwarden scan --modules app_extraction --extract-apks \
-  --mobsf-url http://127.0.0.1:8000 --package com.example.app
+  --mobsf-url http://127.0.0.1:8000 --package com.example.app \
+  --integration-timeout 1800 --mobsf-poll-seconds 5
 ```
 
-Responses are saved under `integrations/mobsf/<package>-<apk-index>/` as `upload.json`, `scan.json` and `report_json.json`. The adapter requests the report once; it does not poll queued scans or validate report completeness. Inspect responses from asynchronous deployments manually. External results are retained as separate JSON evidence, not normalized into native findings. Hexwarden's [permission correlation and certificate blocklist checks](APPLICATIONS.md) complement this broader analysis.
+The adapter uploads once and submits one scan request per extracted APK. Synchronous scans proceed to report retrieval. When MobSF returns a task ID, Hexwarden polls `/api/v1/tasks` for that task and APK hash until successful completion; failed tasks stop the workflow. Responses without a task ID, including an already-enqueued response, proceed to report polling. A missing report is retried. Report/task polling also retries HTTP 429/502/503/504 and connection/timeouts. Authentication errors, redirects, other HTTP failures and unrecognized payloads stop the workflow. An ambiguous scan connection failure proceeds to report polling without resubmitting the scan.
+
+`--mobsf-poll-seconds` sets the polling interval (default 5). `--integration-timeout` is a hard **per-APK workflow deadline**, covering hashing, upload, scan and polling (default 1,800 seconds). A separate worker process enforces this even if an HTTP request stalls. `--timeout` bounds individual upload/task/report requests; a synchronous scan request can use the remaining workflow budget. Timeout or interruption stops local waiting but does not cancel server work. APKs are processed sequentially, so the deadline is not a limit for the entire audit.
+
+Evidence is saved under `integrations/mobsf/<package>-<apk-index>/`:
+
+| File | Contents |
+|---|---|
+| `status.json` | Latest stage, attempt count, APK hashes, task ID when available, and final workflow status |
+| `NNNN-<endpoint>.json` | HTTP status and parsed JSON response for each attempt, or a transport error type |
+| `upload.json`, `scan.json` | Accepted upload and scan responses, when received |
+| `report_json.json` | Validated APK report only |
+
+Final status is `completed`, `failed`, `timed_out`, or `interrupted`. Report validation checks local MD5/SHA-256 identity, a package name, and the expected permission, manifest, code and certificate analysis sections. Empty analysis sections are permitted; this validates report structure and identity, not completeness of every MobSF analyzer. Queued task success alone is insufficient. A `mobsf_report` coverage check records success or the gap, including missing dependencies/API key. External findings remain separate JSON evidence, not normalized into native findings.
+
+Malformed or incompatible reports remain response evidence and never become successful analysis. Non-JSON bodies are marked as such rather than retained; request credentials and transport exception messages are not logged. JSON responses may still contain sensitive server or APK data. Task tracking follows MobSF's [asynchronous task API](https://github.com/MobSF/Mobile-Security-Framework-MobSF/blob/master/mobsf/StaticAnalyzer/views/common/async_task.py); forks with different response formats require adapter changes. Live-server validation remains outstanding. Hexwarden's [permission correlation and certificate blocklist checks](APPLICATIONS.md) complement this broader analysis.
 
 ## Drozer
 

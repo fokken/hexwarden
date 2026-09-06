@@ -78,6 +78,7 @@ def parser():
     scan.add_argument('--package', action='append', default=[], help='restrict package analysis; repeatable')
     scan.add_argument('--max-apps', type=positive, help='optional package count cap; default no cap')
     scan.add_argument('--mobsf-url', help='explicitly upload extracted APKs to this MobSF URL')
+    scan.add_argument('--mobsf-poll-seconds', type=positive, default=5, help='MobSF queue/report polling interval (default 5 seconds)')
     scan.add_argument('--drozer', action='store_true', help='query a prepared Drozer agent')
     scan.add_argument('--drozer-bin', default='drozer', help='Drozer CLI executable')
     scan.add_argument('--drozer-server', default='127.0.0.1')
