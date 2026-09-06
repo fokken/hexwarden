@@ -2,6 +2,25 @@
 
 [Back to README](../README.md) · [Linux installation](../README.md#installation-linux)
 
+## Linux host setup
+
+```sh
+sudo apt install bluez
+```
+
+For Bluetooth testing on a Linux host using systemd:
+
+```sh
+sudo systemctl start bluetooth
+bluetoothctl show
+bluetoothctl power on
+command -v sdptool
+```
+
+Ubuntu's [`bluez` package includes `sdptool`](https://packages.ubuntu.com/noble/amd64/bluez/filelist); other distributions may package it separately as a deprecated BlueZ tool. Hexwarden uses the default adapter and does not power it on automatically.
+
+## Usage
+
 Supply the remote device's MAC to enable host-side testing in addition to the ADB Bluetooth inventory:
 
 ```sh

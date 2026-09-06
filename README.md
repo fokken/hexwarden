@@ -4,7 +4,7 @@
 
 Hexwarden is a Python CLI for auditing Android devices over ADB. Its **20 modules** cover system hardening, interfaces, networking, wireless and running applications. Each run saves raw evidence, text and JSON reports, and an inventory of artifact hashes.
 
-[Installation](#installation-linux) · [Usage](#usage) · [Reports](#reports-and-evidence) · [Coverage](docs/PLAN.md) · [Bluetooth](docs/BLUETOOTH.md) · [Integrations](docs/INTEGRATIONS.md)
+[Installation](#installation-linux) · [Usage](#usage) · [Reports](#reports-and-evidence) · [Module guides](#module-guides) · [Coverage](docs/PLAN.md)
 
 ## Installation (Linux)
 
@@ -75,20 +75,9 @@ python3 -m pip install -e '.[apps,mobsf,bluetooth]'
 sudo apt install openssl apksigner tshark bluez
 ```
 
-The distribution's [`apksigner` package](https://packages.ubuntu.com/noble/apksigner) installs its Java dependency. If using Android SDK Build Tools instead, expose its `apksigner` executable on `PATH`. On Ubuntu, some packages require the Universe repository. `tshark` only reads saved PCAPs here; it does not need host live-capture privileges.
+On Ubuntu, some optional packages require the Universe repository.
 
-For Bluetooth testing on a Linux host using systemd:
-
-```sh
-sudo systemctl start bluetooth
-bluetoothctl show
-bluetoothctl power on
-command -v sdptool
-```
-
-Ubuntu's [`bluez` package includes `sdptool`](https://packages.ubuntu.com/noble/amd64/bluez/filelist); other distributions may package it separately as a deprecated BlueZ tool. Hexwarden uses the default adapter and does not power it on automatically.
-
-Installing `tcpdump` on the computer does **not** install it on Android. Device capture needs a compatible device-side binary and permissions, usually existing root access. Hexwarden does not install device tools or acquire root. See the [Bluetooth guide](docs/BLUETOOTH.md) and [MobSF, Drozer and EMBA setup](docs/INTEGRATIONS.md) for feature-specific requirements.
+See the [module guides](#module-guides) for tool setup, device requirements and detailed examples.
 
 ## Usage
 
@@ -112,43 +101,19 @@ hexwarden scan --modules bluetooth --bt-mac AA:BB:CC:DD:EE:FF
 hexwarden scan --help
 ```
 
-The network module collects interface addresses, link state, IPv4/IPv6 routes and policy rules, socket listeners, process identities and package UIDs. When `ss` exposes PIDs, listener records are correlated with `ps` and `pm list packages -U`; a `netstat` fallback is retained when `ss` is unavailable but cannot provide the same attribution. It also summarizes firewall chain policies and records default routes, interface roles and forwarding state. A wildcard bind remains a review candidate until its owning process, routes, firewall and reachable interfaces are checked together.
-
-Passive analysis is opt-in with `--capture-seconds`. The complete capture is retained as `traffic.pcap` together with `capture-metadata.json`, even when `timeout` returns its normal stop code. Use `--capture-interface wlan0` to limit capture to one interface and `--capture-snaplen 256` to limit packet bytes; the default snap length `0` keeps full packets for manual review. The capture is then passed to `tshark`, which looks for application payloads in common cleartext protocols including HTTP, FTP, Telnet, SMTP, POP, IMAP, IRC, LDAP, MQTT, XMPP, SIP and RTSP. Findings retain protocol names and frame numbers but omit packet Info fields and payload contents, which may contain secrets. STARTTLS, QUIC, proprietary protocols and encrypted traffic still require manual review.
-
 By default, scans select all modules, user 0, 30-second command deadlines, 5,000 log lines and a 90-day patch-age threshold. APK extraction, traffic capture and host Bluetooth testing are opt-in. Use `--max-apps` to cap package collection, `--patch-max-age` to change the patch policy and `--data-dir` to change the output directory. `--user` selects settings/AppOps and user certificate paths; installed package visibility is determined by ADB.
 
 The banner goes to stderr; `--no-banner` suppresses it. The original `android-audit` command and `python3 -m android_audit` remain compatible aliases.
 
-## Application trust and permission correlation
+## Module guides
 
-Use MobSF for broad APK analysis (`--mobsf-url`). Hexwarden correlates installed-app permissions and flags verified signers matching your certificate blocklist:
-
-```sh
-hexwarden scan --modules app_extraction custom_permissions --extract-apks \
-  --blocked-certs blocked-certs.json --package com.example.app
-```
-
-Save the following as `blocked-certs.json` before running the command. Replace the example with the **certificate SHA-256** fingerprint of an unwanted signer (not the APK hash or public-key hash). Add more fingerprints to block additional certificates:
-
-```json
-{
-  "blocked_sha256": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"],
-  "packages": {}
-}
-```
-
-`blocked_sha256` applies to every collected APK. Optional `packages` entries map exact package names to additional blocked fingerprints; they cannot cancel global blocks. Any matching verified signer on a base/split APK produces a finding. An empty blocklist produces no matches. Fingerprints accept upper/lowercase hexadecimal and optional colon separators. Missing tools, failed verification and unrecognized output are **not evaluated**. A `no_match` result does not establish trust or safety. Use the distribution package or Android SDK Build Tools described above and put `apksigner` on PATH; certificate comparison does not require Androguard. Signing-key rotation and device-specific signer selection still need review. The normalized policy and per-APK results, including matched fingerprints, are saved under `evidence/app_extraction/` as `blocked-certs.json` and `signer-policy.json`. Verification uses Android's [apksigner](https://developer.android.com/tools/apksigner).
-
-`--blocked-certs` requires `--extract-apks` and selection of `app_extraction`. Without a policy, signature output is still collected when `apksigner` is available, but blocklist matching is not evaluated. The policy applies only to collected APKs; it does not require listed packages to be installed or prove that every split was extracted. This is an audit check; Hexwarden does not uninstall or prevent installation of matching apps.
-
-The former `--approved-certs` option has been removed. Old policies containing `default` are rejected: create a new blocklist of unwanted certificates rather than copying trusted certificates from an allowlist.
-
-`custom_permissions` requires the `apps` extra and saves `permission-correlation.json`: declaring apps, requesting apps (including SDK conditions), and guarded components, including provider read/write and path permissions. It flags weak permissions guarding enabled exported components and multiple declaring packages. Missing declarations are scoped inventory gaps, not vulnerabilities. Run without `--package` for wider correlation. Requests are not grants; split merging, runtime checks and effective ownership require validation. See Android's [custom permission documentation](https://developer.android.com/guide/topics/permissions/defining).
-
-With `--drozer`, the existing CLI-driven agent probe also records full package UIDs and visible same-UID peers in `evidence/drozer/shared-uids.json`. System-range UIDs, privileged installation paths and observed sensitive grants prioritize review. Android users remain separate. `--package` restricts starting packages while including their visible UID peers; without it, UID inventory covers apps visible to the agent. Grant probes still follow the existing selected-package scope. These are [PackageManager identities](https://developer.android.com/reference/android/content/pm/PackageManager), not proof that an app is currently running or has root access. Raw agent evidence, findings and coverage gaps remain available in the text/JSON reports.
-
-Add `--drozer` after preparing the [Drozer integration](docs/INTEGRATIONS.md#drozer). `--max-apps` caps UID starting-package inspection as well as APK collection; same-UID peers can exceed that cap. Broader permission correlation benefits from omitting `--package`, but update the certificate policy for that wider scope first.
+| Guide | Details |
+|---|---|
+| [Applications](docs/APPLICATIONS.md) | APK extraction, certificate blocklists, permission correlation and shared UIDs |
+| [Networking](docs/NETWORKING.md) | Network inventory, timed PCAP capture and cleartext analysis |
+| [Bluetooth](docs/BLUETOOTH.md) | Host setup, Classic/BLE discovery, reads and connection tests |
+| [Integrations](docs/INTEGRATIONS.md) | MobSF, Drozer and EMBA setup |
+| [Coverage](docs/PLAN.md) | All 20 modules, categories and remaining gaps |
 
 ## Reports and evidence
 
