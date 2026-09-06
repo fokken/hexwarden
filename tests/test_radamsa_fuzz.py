@@ -25,7 +25,8 @@ class RadamsaTests(unittest.TestCase):
             args = NS(radamsa_fuzz=True, radamsa_seed_file=[seed],
                       radamsa_target=['192.0.2.10:9000'], radamsa_protocol='tcp',
                       radamsa_count=1, radamsa_timeout=2, radamsa_delay_ms=0,
-                      radamsa_max_payload=64, radamsa_max_seconds=60)
+                      radamsa_max_payload=64, radamsa_max_seconds=60,
+                      radamsa_monitor_crashes=False)
             c = Context(args, root)
             c.start('radamsa_fuzz', 'networking')
             c.capabilities = {'host_tools': {'radamsa': {'path': '/usr/bin/radamsa'}}}
@@ -40,7 +41,7 @@ class RadamsaTests(unittest.TestCase):
             self.assertEqual(prepared['payload_hex'], '00ff')
             self.assertEqual(prepared['status'], 'prepared')
             self.assertEqual(completed['status'], 'sent')
-            self.assertEqual(c.result['status'], 'collected')
+            self.assertEqual(c.result['status'], 'partial')
 
 
 if __name__ == '__main__':

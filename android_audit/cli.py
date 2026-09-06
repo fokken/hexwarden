@@ -104,6 +104,7 @@ def parser():
     scan.add_argument('--radamsa-count', type=positive, default=100, help='iterations per target (default 100)')
     scan.add_argument('--radamsa-timeout', type=positive, default=3, help='Radamsa/socket timeout in seconds')
     scan.add_argument('--radamsa-max-seconds', type=positive, default=1800, help='maximum total campaign duration (default 1800)')
+    scan.add_argument('--radamsa-no-crash-monitor', action='store_true', help='disable the default ADB logcat crash monitor during Radamsa fuzzing')
     scan.add_argument('--radamsa-delay-ms', type=nonnegative, default=0, help='delay between payloads')
     scan.add_argument('--radamsa-max-payload', type=positive, default=4096, help='maximum generated payload size')
     scan.add_argument('--bt-mac', type=bluetooth_mac, help='opt in to host Bluetooth testing of this remote MAC')
@@ -305,6 +306,7 @@ def main(argv=None):
                           'radamsa_count': args.radamsa_count,
                           'radamsa_timeout': args.radamsa_timeout,
                           'radamsa_max_seconds': args.radamsa_max_seconds,
+                          'radamsa_monitor_crashes': not args.radamsa_no_crash_monitor,
                           'radamsa_delay_ms': args.radamsa_delay_ms,
                           'radamsa_max_payload': args.radamsa_max_payload,
                           'privileged_api_exclude_prefix': args.privileged_api_exclude_prefix,
