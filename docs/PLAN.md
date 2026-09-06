@@ -33,9 +33,9 @@ Hexwarden is a host-side Python CLI targeting one authorized Android device over
 | Wireless | `bluetooth` | Local inventory; optional host MAC-targeted SDP, BLE services/properties/descriptors, BLE reads and advertised RFCOMM/L2CAP connection probes | Host adapter/tools required; existing bonds affect results; no application writes or proof of unauthenticated access |
 | Running applications | `logging_secrets` | Bounded logcat with credential/private-key-marker heuristics | Raw data sensitive; findings omit matched values; incomplete heuristic coverage |
 | Running applications | `privileged_apis` | Privileged app detection; exported service/provider candidates, with configurable package-prefix exclusions (defaults: `com.google`, `com.android`) | Requires APK extraction + Androguard; runtime permission checks need review; excluded packages are coverage scope |
-| Running applications | `custom_permissions` | Permission declarations, requesters and guarded component correlation; weak guards and multiple declarers | Actual ownership, grants, SDK conditions and split merging require validation |
+| Running applications | `custom_permissions` | Permission declarations, requesters and guarded component correlation; weak guards and multiple declarers; filtered `HW-APP-003` candidates | Actual ownership, grants, SDK conditions and split merging require validation; package-prefix exclusions are scope |
 | Running applications | `app_extraction` | Bulk base/split APK extraction, hashes, manifests, verified signer blocklists with additive package entries, MobSF | Visible installed packages only; optional tools required; rotation/device-specific signer selection requires review |
-| Running applications | `app_apis` | Activities, aliases, receivers, providers and services; permission inheritance | Static candidates, not exploitation; split/resource/runtime overrides need review |
+| Running applications | `app_apis` | Activities, aliases, receivers, providers and services; permission inheritance; filtered `HW-APP-001` candidates | Static candidates, not exploitation; split/resource/runtime overrides and package-prefix exclusions need review |
 
 ## Validation strategy
 

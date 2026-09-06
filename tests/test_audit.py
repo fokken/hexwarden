@@ -16,6 +16,7 @@ from android_audit.modules.outdated_os import patch_age
 from android_audit.modules import registry
 from android_audit.modules.network import wildcard_listeners
 from android_audit.modules import privileged_apis
+from android_audit.modules import app_apis, custom_permissions
 
 
 class ManifestTests(unittest.TestCase):
@@ -72,6 +73,30 @@ class CollectionTests(unittest.TestCase):
                 c.cache['apps'] = {'apps': apps, 'evidence': [], 'limitations': []}
                 privileged_apis.run(c)
                 self.assertEqual(sorted({f['detail']['package'] for f in c.result['findings']}), expected)
+
+    def test_app_api_and_custom_permission_findings_use_same_filter(self):
+        apps = []
+        for package in ('com.android.system', 'com.google.system', 'vendor.tool'):
+            apps.append({'package': package, 'privileged_candidate': False, 'apks': [], 'manifests': [{
+                'apk': package + '.apk',
+                'permissions': [{'name': 'custom.ACCESS', 'protection': 'normal', 'weak': True}],
+                'requested_permissions': [],
+                'components': [{'type': 'service', 'name': 'Api', 'exported': True, 'enabled': True,
+                                 'candidate_unguarded': True, 'permission': None, 'read_permission': None,
+                                 'write_permission': None, 'path_permission_rules': []}],
+            }]})
+        with tempfile.TemporaryDirectory() as tmp:
+            for module in (app_apis, custom_permissions):
+                c = Context(argparse.Namespace(serial='d', user=0, adb='adb', timeout=1,
+                                               privileged_api_no_default_excludes=False,
+                                               privileged_api_exclude_prefix=[]), Path(tmp) / module.__name__.split('.')[-1])
+                c.root.mkdir(parents=True, exist_ok=True)
+                c.start(module.__name__.split('.')[-1], 'running_applications')
+                c.cache['apps'] = {'apps': apps, 'evidence': [], 'limitations': []}
+                c.shell = lambda *args, **kwargs: ''
+                module.run(c)
+                rule = 'HW-APP-001' if module is app_apis else 'HW-APP-003'
+                self.assertEqual(sorted({f['detail']['package'] for f in c.result['findings'] if f['rule_id'] == rule}), ['vendor.tool'])
     def test_wildcard_listeners(self):
         text = 'tcp LISTEN 0 10 0.0.0.0:5555 0.0.0.0:*\ntcp LISTEN 0 10 127.0.0.1:8000 0.0.0.0:*\nudp UNCONN 0 0 [::]:5353 [::]:*'
         self.assertEqual(len(wildcard_listeners(text)), 2)

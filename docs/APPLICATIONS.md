@@ -49,7 +49,7 @@ The former `--approved-certs` option has been removed. Old policies containing `
 hexwarden scan --modules privileged_apis --extract-apks
 ```
 
-Add more exclusions with repeated `--privileged-api-exclude-prefix` options. To include the default platform prefixes, use `--privileged-api-no-default-excludes`. Filtering is a coverage decision and is recorded in the module limitations; it does not prove that an excluded package is safe. Runtime authorization, effective grants and actual privileged operations still require validation.
+The same filter applies to `HW-APP-001`, `HW-APP-002` and `HW-APP-003`. Add more exclusions with repeated `--privileged-api-exclude-prefix` options. To include the default platform prefixes, use `--privileged-api-no-default-excludes`. Filtering is a coverage decision and is recorded in each module's limitations; it does not prove that an excluded package is safe. Runtime authorization, effective grants and actual privileged operations still require validation.
 
 ## Shared UIDs through Drozer
 
