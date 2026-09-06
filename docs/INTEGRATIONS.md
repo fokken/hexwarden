@@ -7,13 +7,24 @@ Install and prepare each external analyzer separately; Hexwarden does not instal
 
 ## MobSF
 
-Configure a prepared MobSF server and set `MOBSF_API_KEY` in your environment. Install Hexwarden's `mobsf` extra. Selecting `--mobsf-url` explicitly enables upload of the extracted APKs and requires `--extract-apks` and the `app_extraction` module. Loopback HTTP is supported; remote servers require HTTPS. Credentials are not placed in command logs. The adapter uploads each base/split APK separately, requests a static scan, then saves the JSON response using [MobSF's API](https://github.com/MobSF/Mobile-Security-Framework-MobSF/blob/master/mobsf/MobSF/views/api/api_static_analysis.py).
+Configure a prepared MobSF server and set `MOBSF_API_KEY` in your environment. Install Hexwarden's `mobsf` extra. MobSF upload is a separate phase from APK extraction: first run `--extract-apks`, inspect the collected APKs, copy the ones you want to analyze into `mobsf-upload/`, then run `--mobsf`. Loopback HTTP is supported; remote servers require HTTPS. Credentials are not placed in command logs. The adapter uploads each selected APK separately, requests a static scan, and saves the JSON response using [MobSF's API](https://github.com/MobSF/Mobile-Security-Framework-MobSF/blob/master/mobsf/MobSF/views/api/api_static_analysis.py).
 
 ```sh
+# Phase 1: extract installed APKs for review
 python3 -m hexwarden scan --modules app_extraction --extract-apks \
-  --mobsf-url http://127.0.0.1:8000 --package com.example.app \
+  --package com.example.app
+
+# Copy selected files from data/<run-id>/apks/ into ./mobsf-upload/
+mkdir -p mobsf-upload
+cp data/<run-id>/apks/com.example.app/000.apk mobsf-upload/
+
+# Phase 2: upload only the reviewed APKs
+python3 -m hexwarden scan --mobsf \
+  --mobsf-url http://127.0.0.1:8000 \
   --integration-timeout 1800 --mobsf-poll-seconds 5
 ```
+
+Use `--mobsf-upload-dir /path/to/folder` to select another folder. Only regular files ending in `.apk` (case-insensitive) are selected; other files are ignored. The default folder must exist before the scan. `--mobsf` does not run APK extraction and does not upload APKs from a previous run automatically.
 
 The adapter uploads once and submits one scan request per extracted APK. Synchronous scans proceed to report retrieval. When MobSF returns a task ID, Hexwarden polls `/api/v1/tasks` for that task and APK hash until successful completion; failed tasks stop the workflow. Responses without a task ID, including an already-enqueued response, proceed to report polling. A missing report is retried. Report/task polling also retries HTTP 429/502/503/504 and connection/timeouts. Authentication errors, redirects, other HTTP failures and unrecognized payloads stop the workflow. An ambiguous scan connection failure proceeds to report polling without resubmitting the scan.
 

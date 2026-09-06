@@ -64,7 +64,7 @@ Install only the dependencies for the checks you plan to use:
 | Analyze captured traffic | None | Host `tshark`; device-side `tcpdump` and `timeout` for capture |
 | BLE discovery and reads | `bluetooth` (Bleak) | Bluetooth adapter, BlueZ service and host D-Bus access |
 | Classic Bluetooth discovery | None | BlueZ `sdptool` and a Bluetooth adapter |
-| Submit APKs to MobSF | `mobsf` (Requests) | Prepared MobSF server and API key |
+| Upload selected APKs to MobSF | `mobsf` (Requests) | Prepared MobSF server, API key and a `mobsf-upload/` folder |
 | Drozer agent-context tests | None | Drozer CLI and a reachable Android agent |
 | Offline firmware analysis via EMBA | None | Prepared EMBA installation and a firmware image |
 

@@ -15,7 +15,7 @@ The distribution's [`apksigner` package](https://packages.ubuntu.com/noble/apksi
 
 ## Certificate blocklist
 
-Use MobSF for broad APK analysis (`--mobsf-url`). Hexwarden correlates installed-app permissions and flags verified signers matching your certificate blocklist:
+Use the separate [MobSF workflow](INTEGRATIONS.md#mobsf) for broad APK analysis. Hexwarden also correlates installed-app permissions and flags verified signers matching your certificate blocklist:
 
 ```sh
 hexwarden scan --modules app_extraction custom_permissions --extract-apks \

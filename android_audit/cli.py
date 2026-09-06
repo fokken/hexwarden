@@ -82,6 +82,9 @@ def parser():
     scan.add_argument('--package', action='append', default=[], help='restrict package analysis; repeatable')
     scan.add_argument('--max-apps', type=positive, help='optional package count cap; default no cap')
     scan.add_argument('--mobsf-url', help='explicitly upload extracted APKs to this MobSF URL')
+    scan.add_argument('--mobsf', action='store_true', help='upload APKs from --mobsf-upload-dir to MobSF')
+    scan.add_argument('--mobsf-upload-dir', type=Path, default=Path('mobsf-upload'),
+                      help='folder of APKs for --mobsf (default: mobsf-upload)')
     scan.add_argument('--mobsf-poll-seconds', type=positive, default=5, help='MobSF queue/report polling interval (default 5 seconds)')
     scan.add_argument('--drozer', action='store_true', help='query a prepared Drozer agent')
     scan.add_argument('--drozer-bin', default='drozer', help='Drozer CLI executable')
@@ -153,11 +156,11 @@ def main(argv=None):
     for package in args.package:
         if not re.fullmatch(r'[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*', package):
             p.error('invalid package name')
-    selected = args.modules or list(modules)
+    selected = args.modules or (() if args.mobsf and not args.category else list(modules))
     if set(selected) - modules.keys():
         p.error('unknown modules: ' + ', '.join(sorted(set(selected) - modules.keys())))
     selected = list(dict.fromkeys(name for name in selected if not args.category or modules[name].CATEGORY in args.category))
-    if not selected:
+    if not selected and not args.mobsf:
         p.error('selection contains no modules')
     args.signer_policy = None
     if args.blocked_certs:
@@ -180,14 +183,19 @@ def main(argv=None):
         p.error('--bt-read/--bt-pair require BLE mode')
     if args.bt_connect_classic and args.bt_mode == 'ble':
         p.error('--bt-connect-classic requires classic mode')
+    if args.mobsf_url and not args.mobsf:
+        p.error('--mobsf-url requires --mobsf')
+    if args.mobsf:
+        if not args.mobsf_url:
+            p.error('--mobsf requires --mobsf-url')
+        if not args.mobsf_upload_dir.is_dir():
+            p.error(f'MobSF upload directory does not exist or is not a directory: {args.mobsf_upload_dir}')
     if args.mobsf_url:
         parsed = urlparse(args.mobsf_url)
         if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             p.error('MobSF requires an HTTP(S) URL without credentials, query or fragment')
         if parsed.scheme == 'http' and parsed.hostname not in ('localhost', '127.0.0.1', '::1'):
             p.error('remote MobSF URLs must use HTTPS')
-        if not args.extract_apks or 'app_extraction' not in selected:
-            p.error('--mobsf-url requires --extract-apks and the app_extraction module')
     if args.emba_firmware and not args.emba_firmware.exists():
         p.error('firmware path does not exist')
     os.umask(0o077)
@@ -206,6 +214,7 @@ def main(argv=None):
                           'extract_apks': args.extract_apks, 'capture_seconds': args.capture_seconds,
                           'capture_interface': args.capture_interface, 'capture_snaplen': args.capture_snaplen,
                           'patch_max_age': args.patch_max_age, 'max_apps': args.max_apps,
+                          'mobsf': args.mobsf, 'mobsf_upload_dir': str(args.mobsf_upload_dir),
                           'privileged_api_exclude_prefix': args.privileged_api_exclude_prefix,
                           'privileged_api_no_default_excludes': args.privileged_api_no_default_excludes}}
     document['scope']['bluetooth'] = {

@@ -1,20 +1,24 @@
 """Explicit optional integrations; no automatic tool installation or agent deployment."""
 import os
+from pathlib import Path
 from .core import write_json
 
 
-def mobsf_scan(c, apk):
+def mobsf_scan(c, apk, output_name=None):
     import importlib.util
     import json
     import sys
     from .mobsf_worker import valid_report
-    scope = str(apk.relative_to(c.root))
+    try:
+        scope = str(apk.relative_to(c.root))
+    except ValueError:
+        scope = str(apk)
     if importlib.util.find_spec('requests') is None or not os.environ.get('MOBSF_API_KEY'):
         reason = 'MobSF requires the mobsf extra and MOBSF_API_KEY.'
         c.check('mobsf_report', False, scope=scope, evidence=[], reason=reason)
         c.note(reason)
         return
-    name = apk.parent.name + '-' + apk.stem
+    name = output_name or (apk.parent.name + '-' + apk.stem)
     output = c.root / 'integrations' / 'mobsf' / name
     output.mkdir(parents=True, exist_ok=True)
     status_path = output / 'status.json'
@@ -64,6 +68,19 @@ def mobsf_scan(c, apk):
                    'report availability does not establish completeness of every MobSF analyzer.')
 
 
+def mobsf_upload_folder(c):
+    directory = Path(c.args.mobsf_upload_dir).resolve()
+    apks = sorted(path for path in directory.iterdir() if path.is_file() and path.suffix.lower() == '.apk')
+    if not apks:
+        c.check('mobsf_upload_inventory', False, evidence=[], reason=f'No APK files found in {directory}.')
+        c.note(f'MobSF upload folder is empty: {directory}.')
+        return
+    c.check('mobsf_upload_inventory', True, scope=str(directory), evidence=[])
+    c.note(f'MobSF upload mode selected {len(apks)} APK(s) from {directory}; extracted device APKs are not uploaded automatically.')
+    for index, apk in enumerate(apks):
+        mobsf_scan(c, apk, output_name=f'{directory.name}-{index:03d}-{apk.stem}')
+
+
 def external(c, results=None):
     if results is None:
         results = []
@@ -79,6 +96,17 @@ def external(c, results=None):
         except Exception as exc:
             c.result['status'] = 'error'
             c.note(f'Drozer integration failed: {type(exc).__name__}: {exc}')
+    if getattr(c.args, 'mobsf', False):
+        results.append(c.start('mobsf', 'integrations'))
+        try:
+            mobsf_upload_folder(c)
+        except KeyboardInterrupt:
+            c.result['status'] = 'error'
+            c.note('MobSF upload interrupted; server scans already accepted may continue.')
+            raise
+        except Exception as exc:
+            c.result['status'] = 'error'
+            c.note(f'MobSF upload integration failed: {type(exc).__name__}.')
     if c.args.emba_firmware:
         results.append(c.start('emba', 'integrations'))
         directory = c.root / 'integrations' / 'emba'

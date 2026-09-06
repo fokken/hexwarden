@@ -8,7 +8,7 @@ Hexwarden is a host-side Python CLI targeting one authorized Android device over
 2. Create a private, unique run directory below `data/` and start a file logger.
 3. Discover host/device commands, dependencies, services and requested root capability. Run selected collectors sequentially with deadlines, a fixed serial, and explicit root opt-in. Skip known missing capabilities, attempt unknown ones, stream output to files and record command provenance.
 4. Record automated checks explicitly, including no-match and blocked outcomes. Separate collection, analysis and manual-verification coverage. Findings carry stable IDs, affected assets, classification, focused evidence, remediation and verification guidance. Missing data never means secure.
-5. Optionally pull installed APKs, decode manifests with Androguard, correlate permission declarations/requests/guards, and check verified signing certificates against a user-supplied blocklist. Submit APKs to an explicitly configured MobSF server for broader analysis.
+5. Optionally pull installed APKs, decode manifests with Androguard, correlate permission declarations/requests/guards, and check verified signing certificates against a user-supplied blocklist. In a separate opt-in phase, upload user-selected APKs from `mobsf-upload/` to an explicitly configured MobSF server.
 6. Optionally invoke Drozer CLI modules for package/component inspection, UID groups, effective grants and agent-context filesystem probes, or run EMBA against a supplied local firmware image.
 7. Write incremental text/JSON reports and a final SHA-256 evidence inventory, including failure/interruption reports.
 

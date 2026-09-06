@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from android_audit.core import Context
-from android_audit.integrations import mobsf_scan
+from android_audit.integrations import mobsf_scan, mobsf_upload_folder
 from android_audit.mobsf_worker import run, valid_report
 
 
@@ -159,6 +159,30 @@ class MobSFTests(unittest.TestCase):
             c, apk = self.context(tmp)
             with patch.dict(os.environ, {}, clear=True):
                 mobsf_scan(c, apk)
+            self.assertEqual(c.result['analysis_checks'][0]['status'], 'not_evaluated')
+
+    def test_upload_folder_selects_only_apks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c, _ = self.context(tmp)
+            folder = Path(tmp) / 'mobsf-upload'
+            folder.mkdir()
+            (folder / 'one.apk').write_bytes(b'one')
+            (folder / 'TWO.APK').write_bytes(b'two')
+            (folder / 'notes.txt').write_text('ignore')
+            c.args.mobsf_upload_dir = folder
+            selected = []
+            with patch('android_audit.integrations.mobsf_scan', side_effect=lambda context, apk, **kwargs: selected.append(apk.name)):
+                mobsf_upload_folder(c)
+            self.assertEqual(selected, ['TWO.APK', 'one.apk'])
+            self.assertEqual(c.result['analysis_checks'][0]['status'], 'evaluated')
+
+    def test_upload_folder_empty_is_not_evaluated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c, _ = self.context(tmp)
+            folder = Path(tmp) / 'mobsf-upload'
+            folder.mkdir()
+            c.args.mobsf_upload_dir = folder
+            mobsf_upload_folder(c)
             self.assertEqual(c.result['analysis_checks'][0]['status'], 'not_evaluated')
 
     def test_parent_accepts_only_validated_worker_report(self):
