@@ -1,6 +1,11 @@
 # Hexwarden
 
-Hexwarden is a Python CLI for auditing Android devices over ADB. Its **21 modules** cover system hardening, interfaces, networking, wireless and running applications. Each run saves raw evidence, text and JSON reports, and an inventory of artifact hashes.
+Hexwarden is a Python CLI for Android security assessment. It combines
+ADB-based device and application evidence with Bluetooth testing,
+passive network analysis, opt-in TCP/UDP service fuzzing, and integrations for
+Drozer, MobSF and EMBA. Its **21 modules** cover system hardening, interfaces,
+networking, wireless and running applications; every run saves raw evidence,
+text and JSON reports, and an inventory of artifact hashes.
 
 [Installation](#installation-linux) · [Usage](#usage) · [Reports](#reports-and-evidence) · [Module guides](#module-guides) · [All checks](docs/CHECKS.md) · [Coverage](docs/PLAN.md)
 
