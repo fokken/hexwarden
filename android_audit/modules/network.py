@@ -104,6 +104,44 @@ def firewall_summary(value):
             'rule_count': len(rules), 'default_policies': {name: policy for name, policy in policies}}
 
 
+def nftables_summary(value):
+    """Summarize nftables base chains and verdicts without claiming packet reachability."""
+    tables = re.findall(r'(?m)^\s*table\s+(\S+)\s+(\S+)\s*\{', value)
+    chains = []
+    for match in re.finditer(r'(?ms)^\s*chain\s+(\S+)\s*\{(.*?)(?=^\s*chain\s+|\Z)', value):
+        name, body = match.groups()
+        hook = re.search(r'(?m)^\s*type\s+\S+\s+hook\s+(\S+)\s+priority\s+([^;]+);', body)
+        policy = re.search(r'\bpolicy\s+(\S+)\s*;', body)
+        verdict_body = re.sub(r'\bpolicy\s+\S+\s*;', '', body)
+        verdicts = re.findall(r'\b(accept|drop|reject|return|jump|goto)\b', verdict_body, re.I)
+        interfaces = sorted(set(re.findall(r'\b(?:iifname|oifname)\s+["\']([^"\']+)["\']', body)))
+        chains.append({'name': name, 'hook': hook.group(1) if hook else None,
+                       'priority': hook.group(2).strip() if hook else None,
+                       'policy': policy.group(1).lower() if policy else None,
+                       'rule_count': max(0, len(body.strip().splitlines()) - (1 if hook else 0) - (1 if policy else 0)),
+                       'verdicts': {verdict: sum(1 for item in verdicts if item.lower() == verdict) for verdict in sorted(set(item.lower() for item in verdicts))},
+                       'interfaces': interfaces})
+    return {'tables': [{'family': family, 'name': name} for family, name in tables],
+            'chains': chains, 'rule_count': len([line for line in value.splitlines() if line.strip() and not line.strip().startswith(('table ', 'chain ', 'type ', 'policy ', '}'))])}
+
+
+def namespace_summary(value):
+    namespaces = []
+    for line in value.splitlines():
+        fields = line.split()
+        if fields:
+            namespaces.append({'name': fields[0], 'raw': line})
+    return namespaces
+
+
+def ebpf_summary(value):
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    return {'line_count': len(lines),
+            'program_count': sum(1 for line in lines if re.search(r'\b(prog|program)\b', line, re.I)),
+            'link_count': sum(1 for line in lines if re.search(r'\blink\b', line, re.I)),
+            'raw_available': bool(lines)}
+
+
 def run(c):
     values = {}
     commands = (
@@ -114,6 +152,7 @@ def run(c):
         ('package_uids', 'pm list packages -U'),
         ('connectivity', 'dumpsys connectivity'), ('wifi', 'dumpsys wifi'),
         ('tethering', 'dumpsys tethering'), ('ethernet', 'dumpsys ethernet'),
+        ('network_namespaces', 'ip netns list'), ('pid_net_namespace', 'ls -l /proc/1/ns/net /proc/self/ns/net'),
         ('ipv4_forward', 'cat /proc/sys/net/ipv4/ip_forward'),
         ('ipv6_forward', 'cat /proc/sys/net/ipv6/conf/all/forwarding'))
     for label, command in commands:
@@ -156,15 +195,24 @@ def run(c):
     for label, command in (('iptables', 'iptables-save'), ('ip6tables', 'ip6tables-save'), ('nftables', 'nft list ruleset')):
         value = c.shell(command, label, root=True)
         if value:
-            summary = firewall_summary(value) if label != 'nftables' else {'rule_count': len([line for line in value.splitlines() if line.strip()]), 'default_policies': {}}
+            summary = firewall_summary(value) if label != 'nftables' else nftables_summary(value)
             firewall.append({'family': label, **summary})
-            if label != 'nftables' and summary['default_policies'] and all(policy == 'ACCEPT' for policy in summary['default_policies'].values()):
+            policies = summary.get('default_policies') or {chain['name']: chain['policy'].upper() for chain in summary.get('chains', []) if chain.get('policy')}
+            if policies and all(policy.upper() == 'ACCEPT' for policy in policies.values()):
                 c.finding('HW-NET-004', {'family': label, 'summary': summary}, 'medium', 'medium', asset={'device': c.args.serial, 'family': label})
         c.check('firewall_policy', value is not None, scope=label, reason='Root/firewall command unavailable.' if value is None else None)
+    for label, command in (('ebpf_network', 'bpftool net'), ('ebpf_programs', 'bpftool prog show')):
+        value = c.shell(command, label, root=True)
+        if value:
+            values[label] = value
+        c.check('ebpf_inventory', value is not None, scope=label, reason='Root/bpftool unavailable.' if value is None else None)
     if firewall:
         values['firewall_summary'] = firewall
     c.result['network_analysis'] = {'interfaces': parse_interfaces(values.get('addresses') or ''),
         'default_routes': [route for label in ('routes4', 'routes6') for route in parse_routes(values.get(label) or '') if route['default']],
         'listeners': values.get('listeners_correlated', []), 'firewall': firewall,
+        'namespaces': namespace_summary(values.get('network_namespaces') or ''),
+        'ebpf': {label: ebpf_summary(values.get(label) or '') for label in ('ebpf_network', 'ebpf_programs') if values.get(label)},
         'package_uids': parse_package_uids(values.get('package_uids') or '')}
-    c.note('Socket process identity is best-effort and depends on ss permissions; netstat fallback has no PID attribution. Correlate wildcard listeners with default routes, interface addresses, tethering and firewall policy before treating exposure as reachable. eBPF/offload paths, other namespaces and OEM projection roles may remain invisible.')
+    c.check('network_enforcement_context', bool(firewall or values.get('ebpf_network') or values.get('ebpf_programs') or values.get('network_namespaces')), reason='No firewall, eBPF or namespace enforcement evidence was available.')
+    c.note('Socket process identity is best-effort and depends on ss permissions; netstat fallback has no PID attribution. Correlate wildcard listeners with default routes, interface addresses, tethering and firewall policy before treating exposure as reachable. Firewall summaries report configured chains and policies, not packet reachability. eBPF/offload paths, other namespaces and OEM projection roles may remain invisible.')

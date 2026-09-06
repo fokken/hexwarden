@@ -2,7 +2,8 @@ import unittest
 
 from android_audit.modules.network import (
     correlate_listeners, firewall_summary, parse_interfaces, parse_listeners,
-    parse_package_uids, parse_processes, parse_routes,
+    parse_package_uids, parse_processes, parse_routes, nftables_summary,
+    namespace_summary, ebpf_summary,
 )
 from android_audit.modules.passive_network import parse_cleartext_rows
 from android_audit.modules.passive_network import pcap_header
@@ -44,6 +45,31 @@ class NetworkParsingTests(unittest.TestCase):
         summary = firewall_summary(':INPUT ACCEPT [0:0]\n:OUTPUT DROP [0:0]\n-A INPUT -p tcp --dport 443 -j ACCEPT\n')
         self.assertEqual(summary['default_policies'], {'INPUT': 'ACCEPT', 'OUTPUT': 'DROP'})
         self.assertEqual(summary['rule_count'], 1)
+
+    def test_nftables_summary_tracks_base_chains_verdicts_and_interfaces(self):
+        value = '''table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname "wlan0" tcp dport 22 accept
+    counter drop
+  }
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}'''
+        summary = nftables_summary(value)
+        self.assertEqual(summary['tables'], [{'family': 'inet', 'name': 'filter'}])
+        self.assertEqual(summary['chains'][0]['hook'], 'input')
+        self.assertEqual(summary['chains'][0]['policy'], 'drop')
+        self.assertEqual(summary['chains'][0]['interfaces'], ['wlan0'])
+        self.assertEqual(summary['chains'][0]['verdicts']['accept'], 1)
+        self.assertEqual(summary['chains'][0]['verdicts']['drop'], 1)
+
+    def test_namespace_and_ebpf_summaries_are_bounded(self):
+        self.assertEqual(namespace_summary('blue (id: 1)\n'), [{'name': 'blue', 'raw': 'blue (id: 1)'}])
+        summary = ebpf_summary('xdp prog id 12\nlink id 4\n')
+        self.assertEqual(summary['program_count'], 1)
+        self.assertEqual(summary['link_count'], 1)
 
     def test_cleartext_rows_omit_payload(self):
         rows = parse_cleartext_rows('12\tHTTP\tGET /secret\n13\tFTP\tRETR file\n')

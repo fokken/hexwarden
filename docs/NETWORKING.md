@@ -18,7 +18,9 @@ sudo apt install tshark
 hexwarden scan --modules network
 ```
 
-The network module collects interface addresses, link state, IPv4/IPv6 routes and policy rules, socket listeners, process identities and package UIDs. When `ss` exposes PIDs, listener records are correlated with `ps` and `pm list packages -U`; a `netstat` fallback is retained when `ss` is unavailable but cannot provide the same attribution. It also summarizes firewall chain policies and records default routes, interface roles and forwarding state. A wildcard bind remains a review candidate until its owning process, routes, firewall and reachable interfaces are checked together.
+The network module collects interface addresses, link state, IPv4/IPv6 routes and policy rules, socket listeners, process identities and package UIDs. When `ss` exposes PIDs, listener records are correlated with `ps` and `pm list packages -U`; a `netstat` fallback is retained when `ss` is unavailable but cannot provide the same attribution. It also records network namespaces, summarizes iptables/ip6tables chain policies and nftables base-chain hooks/policies/verdicts, and probes eBPF network/program inventory when root and `bpftool` are available. A wildcard bind remains a review candidate until its owning process, routes, namespace, interface role, firewall policy and reachable interfaces are checked together.
+
+Firewall output describes configured enforcement, not a proof that a remote packet can reach a listener. `HW-NET-004` is raised when observed firewall base-chain/default policies are all `ACCEPT`; it remains a review candidate because Android tethering, OEM policy, namespaces, offload and eBPF behavior can change the effective path. Root is required for firewall and eBPF commands. Namespace and eBPF absence are recorded as coverage gaps rather than treated as an open network.
 
 ## Passive capture
 
