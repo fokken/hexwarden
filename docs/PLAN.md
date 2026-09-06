@@ -2,6 +2,8 @@
 
 Hexwarden is a host-side Python CLI targeting one authorized Android device over ADB. The core works with the Python standard library. Every requested audit area has its own module; shared app extraction and manifest parsing avoid pulling the same APK repeatedly.
 
+See [CHECKS.md](CHECKS.md) for the complete collection and analysis reference, including evidence artifacts and current limits.
+
 ## Architecture
 
 1. Validate CLI scope and discover/select an authorized device. Refuse ambiguous multi-device selection.

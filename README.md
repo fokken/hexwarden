@@ -4,7 +4,7 @@
 
 Hexwarden is a Python CLI for auditing Android devices over ADB. Its **20 modules** cover system hardening, interfaces, networking, wireless and running applications. Each run saves raw evidence, text and JSON reports, and an inventory of artifact hashes.
 
-[Installation](#installation-linux) · [Usage](#usage) · [Reports](#reports-and-evidence) · [Module guides](#module-guides) · [Coverage](docs/PLAN.md)
+[Installation](#installation-linux) · [Usage](#usage) · [Reports](#reports-and-evidence) · [Module guides](#module-guides) · [All checks](docs/CHECKS.md) · [Coverage](docs/PLAN.md)
 
 ## Installation (Linux)
 
@@ -112,6 +112,7 @@ The banner goes to stderr; `--no-banner` suppresses it. The original `android-au
 | [Applications](docs/APPLICATIONS.md) | APK extraction, certificate blocklists, permission correlation and shared UIDs |
 | [Networking](docs/NETWORKING.md) | Network inventory, timed PCAP capture and cleartext analysis |
 | [Bluetooth](docs/BLUETOOTH.md) | Host setup, Classic/BLE discovery, reads and connection tests |
+| [All checks](docs/CHECKS.md) | Every module's collected data, automated checks, findings and limits |
 | [Integrations](docs/INTEGRATIONS.md) | MobSF, Drozer and EMBA setup |
 | [Coverage](docs/PLAN.md) | All 20 modules, categories and remaining gaps |
 
