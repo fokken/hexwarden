@@ -15,6 +15,7 @@ from android_audit.modules.logging_secrets import detect
 from android_audit.modules.outdated_os import patch_age
 from android_audit.modules import registry
 from android_audit.modules.network import wildcard_listeners
+from android_audit.modules import privileged_apis
 
 
 class ManifestTests(unittest.TestCase):
@@ -52,6 +53,25 @@ class ManifestTests(unittest.TestCase):
 
 
 class CollectionTests(unittest.TestCase):
+    def test_privileged_api_default_package_filter_and_override(self):
+        apps = [
+            {'package': 'com.android.system', 'privileged_candidate': True, 'apks': [], 'manifests': [
+                {'apk': 'system.apk', 'components': [{'type': 'service', 'name': 'S', 'exported': True, 'enabled': True, 'candidate_unguarded': True}],}]},
+            {'package': 'com.google.system', 'privileged_candidate': True, 'apks': [], 'manifests': [
+                {'apk': 'google.apk', 'components': [{'type': 'provider', 'name': 'P', 'exported': True, 'enabled': True, 'candidate_unguarded': True}],}]},
+            {'package': 'vendor.tool', 'privileged_candidate': True, 'apks': [], 'manifests': [
+                {'apk': 'vendor.apk', 'components': [{'type': 'service', 'name': 'V', 'exported': True, 'enabled': True, 'candidate_unguarded': True}],}]},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for no_defaults, extra, expected in ((False, [], ['vendor.tool']), (True, [], ['com.android.system', 'com.google.system', 'vendor.tool']), (True, ['vendor'], ['com.android.system', 'com.google.system'])):
+                c = Context(argparse.Namespace(serial='d', user=0, privileged_api_no_default_excludes=no_defaults,
+                                               privileged_api_exclude_prefix=extra), root / str(no_defaults) / str(bool(extra)))
+                c.root.mkdir(parents=True, exist_ok=True)
+                c.start('privileged_apis', 'running_applications')
+                c.cache['apps'] = {'apps': apps, 'evidence': [], 'limitations': []}
+                privileged_apis.run(c)
+                self.assertEqual(sorted({f['detail']['package'] for f in c.result['findings']}), expected)
     def test_wildcard_listeners(self):
         text = 'tcp LISTEN 0 10 0.0.0.0:5555 0.0.0.0:*\ntcp LISTEN 0 10 127.0.0.1:8000 0.0.0.0:*\nudp UNCONN 0 0 [::]:5353 [::]:*'
         self.assertEqual(len(wildcard_listeners(text)), 2)

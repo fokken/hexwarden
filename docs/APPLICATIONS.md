@@ -41,6 +41,16 @@ The former `--approved-certs` option has been removed. Old policies containing `
 
 `custom_permissions` requires the `apps` extra and saves `permission-correlation.json`: declaring apps, requesting apps (including SDK conditions), and guarded components, including provider read/write and path permissions. It flags weak permissions guarding enabled exported components and multiple declaring packages. Missing declarations are scoped inventory gaps, not vulnerabilities. Run without `--package` for wider correlation. Requests are not grants; split merging, runtime checks and effective ownership require validation. See Android's [custom permission documentation](https://developer.android.com/guide/topics/permissions/defining).
 
+## Privileged API candidates
+
+`privileged_apis` reports exported, enabled services and providers without manifest permission guards for packages inferred to be privileged. To reduce platform false positives, packages whose names start with `com.google` or `com.android` are excluded by default:
+
+```sh
+hexwarden scan --modules privileged_apis --extract-apks
+```
+
+Add more exclusions with repeated `--privileged-api-exclude-prefix` options. To include the default platform prefixes, use `--privileged-api-no-default-excludes`. Filtering is a coverage decision and is recorded in the module limitations; it does not prove that an excluded package is safe. Runtime authorization, effective grants and actual privileged operations still require validation.
+
 ## Shared UIDs through Drozer
 
 With `--drozer`, the existing CLI-driven agent probe also records full package UIDs and visible same-UID peers in `evidence/drozer/shared-uids.json`. System-range UIDs, privileged installation paths and observed sensitive grants prioritize review. Android users remain separate. `--package` restricts starting packages while including their visible UID peers; without it, UID inventory covers apps visible to the agent. Grant probes still follow the existing selected-package scope. These are [PackageManager identities](https://developer.android.com/reference/android/content/pm/PackageManager), not proof that an app is currently running or has root access. Raw agent evidence, findings and coverage gaps remain available in the text/JSON reports.

@@ -74,6 +74,10 @@ def parser():
     scan.add_argument('--bt-pair', action='store_true', help='request BLE pairing; may prompt and create a persistent bond')
     scan.add_argument('--bt-connect-classic', action='store_true', help='connect then close advertised RFCOMM/L2CAP endpoints; no payloads')
     scan.add_argument('--extract-apks', action='store_true')
+    scan.add_argument('--privileged-api-exclude-prefix', action='append', default=[],
+                      help='additional package prefix to exclude from HW-APP-002 (repeatable)')
+    scan.add_argument('--privileged-api-no-default-excludes', action='store_true',
+                      help='include com.google* and com.android* packages in HW-APP-002 analysis')
     scan.add_argument('--blocked-certs', type=Path, help='JSON SHA-256 signing-certificate blocklist; requires app_extraction and --extract-apks')
     scan.add_argument('--package', action='append', default=[], help='restrict package analysis; repeatable')
     scan.add_argument('--max-apps', type=positive, help='optional package count cap; default no cap')
@@ -201,7 +205,9 @@ def main(argv=None):
                 'scope': {'user': args.user, 'packages': args.package, 'root': args.root,
                           'extract_apks': args.extract_apks, 'capture_seconds': args.capture_seconds,
                           'capture_interface': args.capture_interface, 'capture_snaplen': args.capture_snaplen,
-                          'patch_max_age': args.patch_max_age, 'max_apps': args.max_apps}}
+                          'patch_max_age': args.patch_max_age, 'max_apps': args.max_apps,
+                          'privileged_api_exclude_prefix': args.privileged_api_exclude_prefix,
+                          'privileged_api_no_default_excludes': args.privileged_api_no_default_excludes}}
     document['scope']['bluetooth'] = {
         'mac': args.bt_mac, 'mode': args.bt_mode, 'timeout': args.bt_timeout,
         'read': args.bt_read, 'pair': args.bt_pair, 'connect_classic': args.bt_connect_classic}
