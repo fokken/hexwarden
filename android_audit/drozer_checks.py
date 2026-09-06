@@ -37,6 +37,7 @@ def analyze(c, events):
         return
     c.result['execution_context'] = identity
     c.check('drozer_agent_identity', True)
+    report_uids(c, events, identity)
     if identity.get('user_id') is not None and identity['user_id'] != c.args.user:
         c.note('Drozer agent user differs from the selected ADB settings user; do not merge their access results.')
     if identity.get('uid') in (0, 1000, 2000):
@@ -78,6 +79,47 @@ def analyze(c, events):
     for path in sorted(created - cleaned):
         c.finding('HW-DZ-003', {'path': path, 'agent': identity}, 'low', 'high')
         c.note('A probe file may remain after failure/interruption; inspect the recorded path and remove it manually.')
+
+
+def report_uids(c, events, identity):
+    groups = {}
+    for index, event in enumerate(events):
+        if event['kind'] != 'package_uid' or type(event.get('uid')) is not int or event['uid'] < 0:
+            continue
+        uid = event['uid']
+        group = groups.setdefault(uid, {'uid': uid, 'user_id': uid // 100000, 'app_id': uid % 100000,
+            'packages': set(), 'privileged_candidates': set(), 'sensitive_grants': set(), 'evidence': []})
+        group['packages'].update(event.get('shared_packages', []))
+        group['packages'].add(event['package'])
+        if event.get('privileged_candidate'):
+            group['privileged_candidates'].add(event['package'])
+        group['evidence'].extend({**ref, 'locator': {'json_pointer': '/' + str(index)}} for ref in c.latest_evidence)
+    for event in events:
+        if event['kind'] == 'package_grants' and event.get('uid') in groups:
+            groups[event['uid']]['sensitive_grants'].update(p['permission'] for p in event['permissions']
+                if p.get('granted') is True and p['permission'] in SENSITIVE_GRANTS)
+    rows = []
+    for uid, group in sorted(groups.items()):
+        for key in ('packages', 'privileged_candidates', 'sensitive_grants'):
+            group[key] = sorted(group[key])
+        group['shared'] = len(group['packages']) > 1
+        group['system_uid_candidate'] = group['app_id'] < 10000
+        rows.append(group)
+        if group['shared'] or group['system_uid_candidate']:
+            elevated = group['system_uid_candidate'] or group['privileged_candidates'] or group['sensitive_grants']
+            c.finding('HW-DZ-004', group, 'medium' if elevated else 'info', 'high',
+                      asset={'device': getattr(c.args, 'serial', None), 'agent_package': identity.get('package'), 'uid': uid},
+                      evidence=group['evidence'])
+    complete = any(e['kind'] == 'uid_inventory_complete' for e in events)
+    c.check('drozer_package_uids', complete and bool(rows),
+            reason=None if complete and rows else 'UID inventory missing, empty or interrupted.')
+    path = c.directory / 'shared-uids.json'
+    write_json(path, rows)
+    c.result['evidence'].append({'path': str(path.relative_to(c.root)), 'kind': 'derived'})
+    c.note('UID groups describe PackageManager identities visible to the Drozer agent, not observed running processes. '
+           'Full UIDs keep Android users separate. Package filters select starting packages; visible same-UID peers '
+           'are included. System UID range, priv-app paths and sensitive grants prioritize review, not proof of root '
+           'or identical SELinux/API access. Package visibility can hide peers.')
 
 
 def run(c):
@@ -135,6 +177,8 @@ def run(c):
             module(name, ['-a', package])
         c.shell(f'cmd appops get --user {c.args.user} ' + shlex.quote(package), 'appops_' + package)
     args = ['--entry-limit', str(c.args.drozer_entry_limit)]
+    if c.args.max_apps:
+        args.extend(['--uid-limit', str(c.args.max_apps)])
     for flag, values in (('--package', packages), ('--list-path', c.args.drozer_list_path or ['/data', '/data/local/tmp', '/sdcard']),
                          ('--read-path', c.args.drozer_read_path), ('--write-dir', c.args.drozer_write_dir)):
         for value in values:

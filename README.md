@@ -58,7 +58,8 @@ Install only the dependencies for the checks you plan to use:
 
 | Capability | Python extra | Additional requirement |
 |---|---|---|
-| Decode and analyze APK manifests | `apps` (Androguard) | `--extract-apks`; `apksigner` and Java for signature verification |
+| Decode manifests and correlate permissions | `apps` (Androguard) | `--extract-apks` |
+| Verify APK signatures and approved signers | None | `--extract-apks`; host `apksigner` and Java; `--approved-certs` for policy comparison |
 | Inspect trusted certificates | None | Host `openssl` |
 | Analyze captured traffic | None | Host `tshark`; device-side `tcpdump` and `timeout` for capture |
 | BLE discovery and reads | `bluetooth` (Bleak) | Bluetooth adapter, BlueZ service and host D-Bus access |
@@ -118,6 +119,36 @@ Passive analysis is opt-in with `--capture-seconds`. The complete capture is ret
 By default, scans select all modules, user 0, 30-second command deadlines, 5,000 log lines and a 90-day patch-age threshold. APK extraction, traffic capture and host Bluetooth testing are opt-in. Use `--max-apps` to cap package collection, `--patch-max-age` to change the patch policy and `--data-dir` to change the output directory. `--user` selects settings/AppOps and user certificate paths; installed package visibility is determined by ADB.
 
 The banner goes to stderr; `--no-banner` suppresses it. The original `android-audit` command and `python3 -m android_audit` remain compatible aliases.
+
+## Application trust and permission correlation
+
+Use MobSF for broad APK analysis (`--mobsf-url`). Hexwarden correlates installed-app permissions and checks verified signers against your approved certificate policy:
+
+```sh
+hexwarden scan --modules app_extraction custom_permissions --extract-apks \
+  --approved-certs approved-certs.json --package com.example.app
+```
+
+Save the following as `approved-certs.json` before running the command. The policy has a default allowlist and optional exact-package overrides. Replace the example fingerprint with an independently approved **certificate SHA-256** fingerprint (not the APK hash or public-key hash):
+
+```json
+{
+  "default": [],
+  "packages": {
+    "com.example.app": ["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]
+  }
+}
+```
+
+Overrides replace the default list. Empty lists approve no signers; every reported signer on every extracted base/split APK must be allowed. Fingerprints accept upper/lowercase hexadecimal and optional colon separators. Missing tools, failed verification and unrecognized output are **not evaluated**, never approved. Use the distribution package or Android SDK Build Tools described above and put `apksigner` on PATH; certificate comparison does not require Androguard. Signing-key rotation and device-specific signer selection still need review. The normalized policy and per-APK results are saved under `evidence/app_extraction/` as `approved-certs.json` and `signer-policy.json`. Verification uses Android's [apksigner](https://developer.android.com/tools/apksigner).
+
+`--approved-certs` requires `--extract-apks` and selection of `app_extraction`. Without a policy, signature output is still collected when `apksigner` is available, but signer approval is not evaluated. The policy applies only to collected APKs; it does not require listed packages to be installed or prove that every split was extracted.
+
+`custom_permissions` requires the `apps` extra and saves `permission-correlation.json`: declaring apps, requesting apps (including SDK conditions), and guarded components, including provider read/write and path permissions. It flags weak permissions guarding enabled exported components and multiple declaring packages. Missing declarations are scoped inventory gaps, not vulnerabilities. Run without `--package` for wider correlation. Requests are not grants; split merging, runtime checks and effective ownership require validation. See Android's [custom permission documentation](https://developer.android.com/guide/topics/permissions/defining).
+
+With `--drozer`, the existing CLI-driven agent probe also records full package UIDs and visible same-UID peers in `evidence/drozer/shared-uids.json`. System-range UIDs, privileged installation paths and observed sensitive grants prioritize review. Android users remain separate. `--package` restricts starting packages while including their visible UID peers; without it, UID inventory covers apps visible to the agent. Grant probes still follow the existing selected-package scope. These are [PackageManager identities](https://developer.android.com/reference/android/content/pm/PackageManager), not proof that an app is currently running or has root access. Raw agent evidence, findings and coverage gaps remain available in the text/JSON reports.
+
+Add `--drozer` after preparing the [Drozer integration](docs/INTEGRATIONS.md#drozer). `--max-apps` caps UID starting-package inspection as well as APK collection; same-UID peers can exceed that cap. Broader permission correlation benefits from omitting `--package`, but update the certificate policy for that wider scope first.
 
 ## Reports and evidence
 

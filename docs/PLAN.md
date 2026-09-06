@@ -8,8 +8,8 @@ Hexwarden is a host-side Python CLI targeting one authorized Android device over
 2. Create a private, unique run directory below `data/` and start a file logger.
 3. Discover host/device commands, dependencies, services and requested root capability. Run selected collectors sequentially with deadlines, a fixed serial, and explicit root opt-in. Skip known missing capabilities, attempt unknown ones, stream output to files and record command provenance.
 4. Record automated checks explicitly, including no-match and blocked outcomes. Separate collection, analysis and manual-verification coverage. Findings carry stable IDs, affected assets, classification, focused evidence, remediation and verification guidance. Missing data never means secure.
-5. Optionally pull installed APKs, decode manifests with Androguard, verify APK signatures with apksigner, and submit APKs to an explicitly configured MobSF server.
-6. Optionally invoke Drozer CLI modules for package/component inspection, effective grants and agent-context filesystem probes, or run EMBA against a supplied local firmware image.
+5. Optionally pull installed APKs, decode manifests with Androguard, correlate permission declarations/requests/guards, and compare verified signing certificates with an approved policy. Submit APKs to an explicitly configured MobSF server for broader analysis.
+6. Optionally invoke Drozer CLI modules for package/component inspection, UID groups, effective grants and agent-context filesystem probes, or run EMBA against a supplied local firmware image.
 7. Write incremental text/JSON reports and a final SHA-256 evidence inventory, including failure/interruption reports.
 
 ## Categories and coverage
@@ -33,13 +33,13 @@ Hexwarden is a host-side Python CLI targeting one authorized Android device over
 | Wireless | `bluetooth` | Local inventory; optional host MAC-targeted SDP, BLE services/properties/descriptors, BLE reads and advertised RFCOMM/L2CAP connection probes | Host adapter/tools required; existing bonds affect results; no application writes or proof of unauthenticated access |
 | Running applications | `logging_secrets` | Bounded logcat with credential/private-key-marker heuristics | Raw data sensitive; findings omit matched values; incomplete heuristic coverage |
 | Running applications | `privileged_apis` | Privileged app detection; exported service/provider candidates | Requires APK extraction + Androguard; runtime permission checks need review |
-| Running applications | `custom_permissions` | Permission definitions and normal/dangerous protection candidates | Ownership/consumers and actual abuse need validation |
-| Running applications | `app_extraction` | Bulk base/split APK extraction, hashes, manifests, signing checks, MobSF | Visible installed packages only; optional tools required |
+| Running applications | `custom_permissions` | Permission declarations, requesters and guarded component correlation; weak guards and multiple declarers | Actual ownership, grants, SDK conditions and split merging require validation |
+| Running applications | `app_extraction` | Bulk base/split APK extraction, hashes, manifests, verified signer allowlists with package overrides, MobSF | Visible installed packages only; optional tools required; rotation/device-specific signer selection requires review |
 | Running applications | `app_apis` | Activities, aliases, receivers, providers and services; permission inheritance | Static candidates, not exploitation; split/resource/runtime overrides need review |
 
 ## Validation strategy
 
-Drozer tests distinguish requested from granted permissions, verify actual file-open failures, ensure write-probe cleanup, retain incomplete cleanup records, and check CLI command quoting and supported-module selection. Capability tests cover known missing and unknown commands, service inventory parsing, root context selection and capture prerequisites.
+Drozer tests distinguish requested from granted permissions, verify actual file-open failures, ensure write-probe cleanup, retain incomplete cleanup records, and check CLI command quoting and supported-module selection. UID tests cover visible peers, separate Android users, privilege prioritization and missing inventory. Signer tests cover policy validation, package overrides, multiple signers, split APK outcomes and incomplete verification output. Permission correlation tests cover request SDK conditions, provider path guards, duplicate declarations and disabled components. Capability tests cover known missing and unknown commands, service inventory parsing, root context selection and capture prerequisites.
 
 Unit tests cover manifest permission inheritance, provider defaults by target SDK, asymmetric provider permissions, disabled components, custom protection bits, and log secret redaction. A simulated ADB integration test runs all 20 modules and checks reports, evidence paths, findings and file permissions. Bluetooth tests cover SDP endpoint association, invalid endpoint filtering, opt-in CLI validation, BLE discovery/read/pair behavior, denied reads, absent targets, deadlines, socket closure and exclusion of read values from findings. Failure tests cover missing ADB, denied commands and deadlines. Physical-device and external-service validation remains necessary before relying on findings operationally.
 
@@ -49,6 +49,6 @@ Unit tests cover manifest permission inheritance, provider defaults by target SD
 * On-device KeyMint/StrongBox attestation helper with independent verification and trusted roots.
 * OEM OTA, projection-mode, firewall/eBPF, and custom HSM adapters.
 * Approved production APK/CA/AVB fingerprint baselines and firmware package samples.
-* Effective merged manifest/resource analysis, permission-consumer graph and runtime authorization checks.
+* Effective merged manifest/resource analysis and broader runtime authorization checks; the manifest permission map and Drozer UID groups are implemented.
 
 These are explicit coverage gaps, not implemented capabilities. The current tool collects the supporting evidence and reports the gaps.

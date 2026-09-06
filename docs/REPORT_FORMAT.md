@@ -52,6 +52,22 @@ This is a structural example, not real device evidence. Locator forms are:
 
 A reference without a locator applies to the referenced output as a whole. Command evidence entries retain `label`, arguments, return code, timeout, truncation state and stderr path. Capabilities and cached app artifacts may be referenced from another module's evidence directory. Raw artifacts and external analyzer reports can still contain sensitive information.
 
+## Application analysis artifacts
+
+Paths below are relative to the run directory. Findings remain in both `report.txt` and `report.json`; the detailed inventories are JSON evidence.
+
+| Artifact | Contents |
+|---|---|
+| `evidence/app_extraction/approved-certs.json` | Normalized policy snapshot when `--approved-certs` is supplied |
+| `evidence/app_extraction/signer-policy.json` | Per extracted APK: package, path, signature evidence, allowed fingerprints and policy status |
+| `evidence/custom_permissions/permission-correlation.json` | Permission declarations, requesters, protected components and scoped declaration status |
+| `integrations/drozer/agent-checks.json` | Agent identity and individual probe events |
+| `evidence/drozer/shared-uids.json` | Full UID groups, visible packages, privilege indicators and source event references |
+
+Signer policy status is `approved`, `unapproved`, or `not_evaluated`. Approval requires successful signature verification and all parsed current certificate fingerprints to be allowed. `HW-APP-009` reports unapproved signers; unavailable verification is a coverage gap. Missing APKs have not-evaluated checks rather than fabricated per-APK rows. Approval does not establish scan-wide completeness or application safety.
+
+Permission declaration status is `observed`, `multiple_declarers`, or `not_observed_in_scope`. It describes decoded manifests, not effective PackageManager ownership or permission grants. `HW-APP-010` flags weak guards on enabled exported components or multiple declaring packages. `HW-DZ-004` records shared or system-range UIDs as observations; severity prioritizes review rather than confirming a vulnerability.
+
 ## Coverage
 
 Every audit module has a `coverage` object with independent sections:

@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from android_audit.core import Context
-from android_audit.drozer_checks import analyze, parse_events, run
+from android_audit.drozer_checks import analyze, parse_events, run, report_uids
 
 
 def load_probe():
@@ -113,8 +113,43 @@ class AgentTests(unittest.TestCase):
         result = self.probe.package_grants('test.app')
         self.assertEqual([p['granted'] for p in result['permissions']], [True, False])
 
+    def test_uid_probe_collects_visible_peers(self):
+        from types import SimpleNamespace as NS
+        info = NS(packageName='system.app', applicationInfo=NS(uid=1000, flags=1, sourceDir='/system/priv-app/Test/Test.apk'))
+        installed = NS(size=lambda: 1, get=lambda index: info)
+        pm = NS(getInstalledPackages=lambda flags: installed, getPackagesForUid=lambda uid: ['system.app', 'peer.app'])
+        self.probe.getContext = lambda: NS(getPackageManager=lambda: pm)
+        self.probe.package_uids([])
+        events = parse_events(self.probe.stdout.getvalue())
+        self.assertEqual(events[0]['uid'], 1000)
+        self.assertTrue(events[0]['privileged_candidate'])
+        self.assertEqual(events[0]['shared_packages'], ['system.app', 'peer.app'])
+        self.assertEqual(events[-1]['kind'], 'uid_inventory_complete')
+
 
 class OrchestrationTests(unittest.TestCase):
+    def test_uid_groups_keep_users_separate_and_prioritize_privileged_peers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = self.context(tmp)
+            events = [
+                {'kind': 'package_uid', 'package': 'one', 'uid': 10001, 'shared_packages': ['one', 'two'], 'privileged_candidate': True},
+                {'kind': 'package_uid', 'package': 'two', 'uid': 10001, 'shared_packages': ['one', 'two']},
+                {'kind': 'package_uid', 'package': 'one', 'uid': 110001, 'shared_packages': ['one']},
+                {'kind': 'uid_inventory_complete'}]
+            report_uids(c, events, {'package': 'agent'})
+            rows = json.loads((c.directory / 'shared-uids.json').read_text())
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[1]['user_id'], 1)
+            self.assertFalse(rows[1]['shared'])
+            self.assertEqual(len(c.result['findings']), 1)
+            self.assertEqual(c.result['findings'][0]['severity'], 'medium')
+
+    def test_missing_uid_inventory_is_not_evaluated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = self.context(tmp)
+            report_uids(c, [], {})
+            self.assertEqual(c.result['analysis_checks'][0]['status'], 'not_evaluated')
+
     def context(self, tmp):
         args = argparse.Namespace(timeout=1, integration_timeout=2, drozer_bin='drozer', user=0,
             drozer_server='127.0.0.1', package=['test.app'], max_apps=None,

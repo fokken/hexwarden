@@ -17,6 +17,7 @@ class Audit(Module):
         parser.add_argument('--read-path', action='append', default=[])
         parser.add_argument('--write-dir', action='append', default=[])
         parser.add_argument('--entry-limit', type=int, default=50)
+        parser.add_argument('--uid-limit', type=int, default=0)
 
     def emit(self, kind, **values):
         self.stdout.write('HEXWARDEN_JSON ' + json.dumps(dict(kind=kind, **values)) + '\n')
@@ -56,6 +57,27 @@ class Audit(Module):
                 entries.append({'permission': permission, 'granted': grant == 0, 'result': grant})
         return {'package': package, 'uid': int(info.applicationInfo.uid), 'permissions': entries,
                 'method': 'PackageManager.checkPermission', 'appops_verified': False}
+
+    def package_uids(self, packages, limit=0):
+        pm = self.getContext().getPackageManager()
+        if packages:
+            infos = (pm.getPackageInfo(package, 0) for package in packages)
+        else:
+            installed = pm.getInstalledPackages(0)
+            infos = (installed.get(index) for index in range(int(installed.size())))
+        for index, info in enumerate(infos):
+            if limit and index >= limit:
+                self.emit('uid_inventory_truncated', limit=limit)
+                return
+            app = info.applicationInfo
+            uid = int(app.uid)
+            peers = pm.getPackagesForUid(uid)
+            self.emit('package_uid', package=str(info.packageName), uid=uid,
+                      shared_packages=[str(name) for name in peers] if peers is not None else [],
+                      system_app=bool(int(app.flags) & 1),
+                      privileged_candidate='/priv-app/' in str(app.sourceDir),
+                      method='PackageManager.applicationInfo.uid/getPackagesForUid')
+        self.emit('uid_inventory_complete')
 
     def filesystem(self, path, action, limit):
         result = {'path': path, 'action': action, 'status': 'unknown'}
@@ -115,6 +137,10 @@ class Audit(Module):
             self.emit('error', stage='identity', error=str(exc))
             return
         packages = list(dict.fromkeys([identity['package'], *arguments.package]))
+        try:
+            self.package_uids(arguments.package, arguments.uid_limit)
+        except Exception as exc:
+            self.emit('error', stage='package_uids', error=str(exc))
         for package in packages:
             try:
                 self.emit('package_grants', **self.package_grants(package))

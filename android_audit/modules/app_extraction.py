@@ -1,10 +1,12 @@
 from ..apps import collect_apps, record_manifest_checks, manifest_evidence
 from ..integrations import mobsf_scan
+from ..app_trust import report_signers
 CATEGORY = 'running_applications'
 
 def run(c):
     apps = collect_apps(c)
     record_manifest_checks(c, apps, 'debuggable_manifest')
+    report_signers(c, apps)
     for app in apps:
         for manifest in app['manifests']:
             if manifest['application'].get('debuggable') == 'true':

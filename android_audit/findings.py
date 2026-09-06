@@ -4,6 +4,9 @@ import json
 
 # ID, title, classification, recommended action, verification procedure.
 RULE_DATA = [
+('HW-DZ-004', 'Shared or system-range application UID', 'observation', 'Review whether packages sharing an identity and its privileges belong in the same trust boundary.', 'Confirm the full UID, effective grants, SELinux domains and running process identities; system UID range and priv-app paths are privilege indicators.'),
+('HW-APP-009', 'APK signer outside approved certificate policy', 'review_candidate', 'Confirm the expected signer and replace unapproved builds or update the reviewed policy.', 'Compare the verified certificate SHA-256 fingerprints with an independently approved baseline; review signing-key rotation.'),
+('HW-APP-010', 'Custom permission relationship requires review', 'review_candidate', 'Review weak permissions guarding exported components and conflicting permission declarations.', 'Confirm effective ownership and grants through PackageManager and test authorization from the Drozer agent context.'),
 ('HW-DEV-001', 'Developer setting enabled', 'observation', 'Disable unnecessary development/debugging features after the assessment.', 'Re-read the setting after changing it and verify the intended USB/network debugging workflow.'),
 ('HW-DEV-002', 'Network ADB configured', 'review_candidate', 'Disable network ADB when unused; otherwise restrict its reachability and require authentication.', 'Correlate the configured port with listening sockets and test access from the intended network boundary.'),
 ('HW-ENC-001', 'Storage reports unencrypted', 'review_candidate', 'Use the vendor-supported storage encryption configuration for sensitive volumes.', 'Confirm volume-specific encryption and key protection using trusted device/vendor evidence.'),

@@ -1,10 +1,12 @@
 from ..apps import collect_apps, record_manifest_checks, manifest_evidence
+from ..permission_map import report_permissions
 CATEGORY = 'running_applications'
 
 def run(c):
     c.shell('pm list permissions -f', 'permissions')
     apps = collect_apps(c)
     record_manifest_checks(c, apps, 'custom_permissions')
+    report_permissions(c, apps)
     for app in apps:
         for manifest in app['manifests']:
             for permission in manifest['permissions']:

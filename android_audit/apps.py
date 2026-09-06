@@ -37,7 +37,11 @@ def manifest_analysis(tree):
     except ValueError:
         target = None
     result = {'package': tree.get('package'), 'target_sdk': target, 'components': [],
-              'permissions': [], 'application': {}}
+              'permissions': [], 'requested_permissions': [], 'application': {}}
+    for tag in ('uses-permission', 'uses-permission-sdk-23', 'uses-permission-sdk-m'):
+        for node in tree.findall(tag):
+            result['requested_permissions'].append({'name': node.get(ANDROID + 'name'),
+                'max_sdk': node.get(ANDROID + 'maxSdkVersion'), 'element': tag})
     for perm in tree.findall('permission'):
         protection = perm.get(ANDROID + 'protectionLevel', 'normal')
         try:
@@ -77,6 +81,9 @@ def manifest_analysis(tree):
                 'permission': permission, 'read_permission': read if tag == 'provider' else None,
                 'write_permission': write if tag == 'provider' else None,
                 'path_permissions': len(node.findall('path-permission')),
+                'path_permission_rules': [{key: path.get(ANDROID + key) for key in
+                    ('permission', 'readPermission', 'writePermission', 'path', 'pathPrefix', 'pathPattern')}
+                    for path in node.findall('path-permission')],
                 'candidate_unguarded': exported is True and enabled and unguarded})
     return result
 
@@ -120,8 +127,12 @@ def collect_apps(c):
                         digest.update(block)
                 item['apks'].append({'path': str(destination.relative_to(c.root)), 'remote': remote,
                                      'sha256': digest.hexdigest()})
+                item['apks'][-1]['signature'] = {'status': 'unavailable', 'sha256': [], 'evidence': []}
                 if shutil.which('apksigner'):
-                    c.command(['apksigner', 'verify', '--verbose', '--print-certs', str(destination)], 'signature_' + package)
+                    from .app_trust import parse_signature
+                    output = c.command(['apksigner', 'verify', '--verbose', '--print-certs', str(destination)], 'signature_' + package)
+                    item['apks'][-1]['signature'] = parse_signature(output)
+                    item['apks'][-1]['signature']['evidence'] = list(c.latest_evidence)
                 else:
                     c.note('apksigner unavailable: cryptographic APK signature verification skipped.')
                 if APK:
