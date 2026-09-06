@@ -26,6 +26,13 @@ def positive(value):
     return number
 
 
+def nonnegative(value):
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError('must be zero or positive')
+    return number
+
+
 def bluetooth_mac(value):
     if not re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', value):
         raise argparse.ArgumentTypeError('expected Bluetooth MAC AA:BB:CC:DD:EE:FF')
@@ -56,6 +63,15 @@ def capture_interface(value):
     return value
 
 
+def radamsa_target(value):
+    from .modules.radamsa_fuzz import parse_target
+    try:
+        parse_target(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    return value
+
+
 def parser():
     p = argparse.ArgumentParser(prog='hexwarden', description='Hexwarden - modular Android security auditing over ADB')
     p.add_argument('--version', action='version', version=f'Hexwarden {__version__}')
@@ -79,6 +95,17 @@ def parser():
     scan.add_argument('--capture-seconds', type=positive, help='opt in to device tcpdump capture on any interface')
     scan.add_argument('--capture-interface', type=capture_interface, default='any', help='device interface for passive capture (default: any)')
     scan.add_argument('--capture-snaplen', type=int, default=0, help='tcpdump snap length in bytes; 0 keeps full packets')
+    scan.add_argument('--radamsa-fuzz', action='store_true', help='run the separate, opt-in Radamsa socket fuzzing module')
+    scan.add_argument('--radamsa-target', action='append', type=radamsa_target, default=[], metavar='IP:PORT',
+                      help='explicit IPv4/IPv6 target; repeatable, IPv6 uses [ADDR]:PORT')
+    scan.add_argument('--radamsa-protocol', choices=('tcp', 'udp'), default='tcp')
+    scan.add_argument('--radamsa-seed-file', type=Path, action='append', default=[], metavar='FILE',
+                      help='seed input for Radamsa; repeatable')
+    scan.add_argument('--radamsa-count', type=positive, default=100, help='iterations per target (default 100)')
+    scan.add_argument('--radamsa-timeout', type=positive, default=3, help='Radamsa/socket timeout in seconds')
+    scan.add_argument('--radamsa-max-seconds', type=positive, default=1800, help='maximum total campaign duration (default 1800)')
+    scan.add_argument('--radamsa-delay-ms', type=nonnegative, default=0, help='delay between payloads')
+    scan.add_argument('--radamsa-max-payload', type=positive, default=4096, help='maximum generated payload size')
     scan.add_argument('--bt-mac', type=bluetooth_mac, help='opt in to host Bluetooth testing of this remote MAC')
     scan.add_argument('--bt-mode', choices=('both', 'classic', 'ble'), default='both')
     scan.add_argument('--bt-timeout', type=positive, default=30, help='deadline per host Bluetooth discovery phase (seconds)')
@@ -175,12 +202,39 @@ def main(argv=None):
     for package in args.package:
         if not re.fullmatch(r'[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*', package):
             p.error('invalid package name')
-    selected = args.modules or (() if args.mobsf and not args.category else list(modules))
+    if args.modules:
+        selected = list(args.modules)
+    elif args.radamsa_fuzz and not args.category:
+        # The explicit fuzz flag is a separate workflow; do not silently rerun
+        # every collection module unless the caller asks for them.
+        selected = ['radamsa_fuzz']
+    else:
+        selected = list(() if args.mobsf and not args.category else modules)
+        if not args.radamsa_fuzz:
+            selected = [name for name in selected if name != 'radamsa_fuzz']
+    if args.radamsa_fuzz and 'radamsa_fuzz' not in selected:
+        selected.append('radamsa_fuzz')
     if set(selected) - modules.keys():
         p.error('unknown modules: ' + ', '.join(sorted(set(selected) - modules.keys())))
     selected = list(dict.fromkeys(name for name in selected if not args.category or modules[name].CATEGORY in args.category))
+    if args.radamsa_fuzz and 'radamsa_fuzz' not in selected:
+        selected.append('radamsa_fuzz')
     if not selected and not args.mobsf:
         p.error('selection contains no modules')
+    if 'radamsa_fuzz' in selected and not args.radamsa_fuzz:
+        p.error('radamsa_fuzz requires --radamsa-fuzz')
+    if args.radamsa_fuzz:
+        if not args.radamsa_target:
+            p.error('--radamsa-fuzz requires at least one --radamsa-target')
+        if not args.radamsa_seed_file:
+            p.error('--radamsa-fuzz requires --radamsa-seed-file')
+        for path in args.radamsa_seed_file:
+            if not path.is_file():
+                p.error(f'Radamsa seed file does not exist or is not a file: {path}')
+        if args.radamsa_count > 10000:
+            p.error('--radamsa-count must not exceed 10000')
+        if args.radamsa_max_payload > 1024 * 1024:
+            p.error('--radamsa-max-payload must not exceed 1048576 bytes')
     args.signer_policy = None
     if args.blocked_certs:
         if not args.extract_apks or 'app_extraction' not in selected:
@@ -244,6 +298,15 @@ def main(argv=None):
                           'capture_interface': args.capture_interface, 'capture_snaplen': args.capture_snaplen,
                           'patch_max_age': args.patch_max_age, 'max_apps': args.max_apps,
                           'mobsf': args.mobsf, 'mobsf_upload_dir': str(args.mobsf_upload_dir),
+                          'radamsa_fuzz': args.radamsa_fuzz,
+                          'radamsa_targets': args.radamsa_target,
+                          'radamsa_protocol': args.radamsa_protocol,
+                          'radamsa_seed_files': [str(path) for path in args.radamsa_seed_file],
+                          'radamsa_count': args.radamsa_count,
+                          'radamsa_timeout': args.radamsa_timeout,
+                          'radamsa_max_seconds': args.radamsa_max_seconds,
+                          'radamsa_delay_ms': args.radamsa_delay_ms,
+                          'radamsa_max_payload': args.radamsa_max_payload,
                           'privileged_api_exclude_prefix': args.privileged_api_exclude_prefix,
                           'privileged_api_no_default_excludes': args.privileged_api_no_default_excludes}}
     document['scope']['bluetooth'] = {

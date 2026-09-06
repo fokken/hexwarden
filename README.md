@@ -62,6 +62,7 @@ Install only the dependencies for the checks you plan to use:
 | Verify APK signatures and flag unwanted signers | None | `--extract-apks`; host `apksigner` and Java; `--blocked-certs` for policy comparison |
 | Inspect trusted certificates | None | Host `openssl` |
 | Analyze captured traffic | None | Host `tshark`; device-side `tcpdump` and `timeout` for capture |
+| Fuzz selected TCP/UDP services | None | Host `radamsa`; explicit target IP/port and seed file |
 | BLE discovery and reads | `bluetooth` (Bleak) | Bluetooth adapter, BlueZ service and host D-Bus access |
 | Classic Bluetooth discovery | None | BlueZ `sdptool` and a Bluetooth adapter |
 | Upload selected APKs to MobSF | `mobsf` (Requests) | Prepared MobSF server, API key and a `mobsf-upload/` folder |
@@ -72,7 +73,7 @@ For all Python extras and the optional Ubuntu/Debian host tools:
 
 ```sh
 python3 -m pip install -e '.[apps,mobsf,bluetooth]'
-sudo apt install openssl apksigner tshark bluez
+sudo apt install openssl apksigner tshark bluez radamsa
 ```
 
 On Ubuntu, some optional packages require the Universe repository.
@@ -101,7 +102,7 @@ hexwarden scan --modules bluetooth --bt-mac AA:BB:CC:DD:EE:FF
 hexwarden scan --help
 ```
 
-By default, scans select all modules, user 0, 30-second command deadlines, 5,000 log lines and a 90-day patch-age threshold. APK extraction, traffic capture and host Bluetooth testing are opt-in. Use `--max-apps` to cap package collection, `--patch-max-age` to change the patch policy and `--data-dir` to change the output directory. `--user` selects settings/AppOps and user certificate paths; installed package visibility is determined by ADB.
+By default, scans select all collection modules, user 0, 30-second command deadlines, 5,000 log lines and a 90-day patch-age threshold. APK extraction, traffic capture, host Bluetooth testing and Radamsa socket fuzzing are opt-in. Use `--max-apps` to cap package collection, `--patch-max-age` to change the patch policy and `--data-dir` to change the output directory. `--user` selects settings/AppOps and user certificate paths; installed package visibility is determined by ADB.
 
 The banner goes to stderr; `--no-banner` suppresses it. The original `android-audit` command and `python3 -m android_audit` remain compatible aliases.
 
@@ -112,9 +113,10 @@ The banner goes to stderr; `--no-banner` suppresses it. The original `android-au
 | [Applications](docs/APPLICATIONS.md) | APK extraction, certificate blocklists, permission correlation and shared UIDs |
 | [Networking](docs/NETWORKING.md) | Network inventory, timed PCAP capture and cleartext analysis |
 | [Bluetooth](docs/BLUETOOTH.md) | Host setup, Classic/BLE discovery, reads, connection and bounded write-authorization tests |
+| [Radamsa fuzzing](docs/RADAMSA_FUZZ.md) | Explicit TCP/UDP service fuzzing with durable timestamped payload journals |
 | [All checks](docs/CHECKS.md) | Every module's collected data, automated checks, findings and limits |
 | [Integrations](docs/INTEGRATIONS.md) | MobSF, Drozer and EMBA setup |
-| [Coverage](docs/PLAN.md) | All 20 modules, categories and remaining gaps |
+| [Coverage](docs/PLAN.md) | All modules, categories and remaining gaps |
 
 ## Reports and evidence
 

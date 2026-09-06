@@ -5,6 +5,7 @@ NAMES = (
     "backup", "logging_secrets", "network", "passive_network", "bluetooth", "certificates",
     "privileged_apis", "filesystem_acls", "custom_permissions", "usb", "secrets_trust",
     "verified_boot", "updates_integrity", "app_extraction", "app_apis",
+    "radamsa_fuzz",
 )
 
 def registry():

@@ -45,7 +45,7 @@ def discover(c):
     evidence = c.start('capabilities', 'preflight')
     host = {}
     for executable in dict.fromkeys([c.args.adb, c.args.drozer_bin, c.args.emba, 'openssl', 'apksigner',
-                                    'tshark', 'bluetoothctl', 'sdptool', sys.executable]):
+                                    'tshark', 'bluetoothctl', 'sdptool', 'radamsa', sys.executable]):
         path = shutil.which(executable)
         host[executable] = {'status': 'available' if path else 'unavailable', 'path': path}
     dependencies = {}
