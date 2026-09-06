@@ -8,5 +8,5 @@ BANNER = r'''
     \ \  / /     H   H E      X X  WW WW A   A R  R  D   D E     N  NN
      \ \/ /      H   H EEEEE X   X W   W A   A R   R DDDD  EEEEE N   N
       \  /
-       \/             INSPECT THE RUNES. EXPOSE THE CRACKS.
+       \/
 '''.strip('\n')
