@@ -165,16 +165,19 @@ def run(c):
         return invoke(shlex.join(['run', name, *args]), name.replace('.', '_'))
 
     module('app.package.list')
+    # These inventory modules are global when invoked without package arguments.
+    # Keep the complete package/component surface in one pass instead of reducing
+    # it to a selected-package attack-surface summary.
+    module('app.package.info')
+    module('app.package.shareduid')
+    for name in ('app.activity.info', 'app.service.info', 'app.provider.info', 'app.broadcast.info'):
+        module(name)
     packages = c.args.package[:c.args.max_apps] if c.args.max_apps else c.args.package
     if len(packages) < len(c.args.package):
         c.note(f'Drozer package inspection capped at {c.args.max_apps} packages.')
     if not packages:
-        c.note('Per-app Drozer inspection requires explicit --package selections; agent grants are still checked.')
+        c.note('Per-package Drozer grant and AppOps checks require explicit --package selections; global inventory still runs.')
     for package in packages:
-        module('app.package.info', ['-a', package])
-        module('app.package.attacksurface', [package])
-        for name in ('app.activity.info', 'app.service.info', 'app.provider.info', 'app.broadcast.info'):
-            module(name, ['-a', package])
         c.shell(f'cmd appops get --user {c.args.user} ' + shlex.quote(package), 'appops_' + package)
     args = ['--entry-limit', str(c.args.drozer_entry_limit)]
     if c.args.max_apps:
@@ -198,4 +201,4 @@ def run(c):
     for key in ('enabled_accessibility_services', 'enabled_notification_listeners'):
         c.setting('secure', key)
     c.shell('dumpsys device_policy', 'special_access_policy')
-    c.note('All Drozer operations use its CLI and the connected agent identity. PackageManager grants do not establish AppOps access or successful privileged API use. Package/component info is inventory, not invocation. ADB policy evidence is separate from agent tests. Confirm the Drozer endpoint matches the ADB target; no automatic forwarding, agent installation or privilege escalation occurs.')
+    c.note('All Drozer operations use its CLI and the connected agent identity. Global package/component inventory and app.package.shareduid run without a package argument; PackageManager grants and AppOps remain scoped to selected packages. Grants do not establish AppOps authorization or successful privileged API use. Inventory is not invocation. ADB policy evidence is separate from agent tests. Confirm the Drozer endpoint matches the ADB target; no automatic forwarding, agent installation or privilege escalation occurs.')

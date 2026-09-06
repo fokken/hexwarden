@@ -167,7 +167,10 @@ class OrchestrationTests(unittest.TestCase):
                 commands.append(argv)
                 if label == 'drozer_cli_help': return '--no-color --no-password'
                 if label == 'drozer_available_modules':
-                    return 'app.package.info  Information\nhexwarden.audit  Checks\n'
+                    return ('app.package.info  Information\napp.package.shareduid  Shared UIDs\n'
+                            'app.activity.info  Activities\napp.service.info  Services\n'
+                            'app.provider.info  Providers\napp.broadcast.info  Broadcasts\n'
+                            'hexwarden.audit  Checks\n')
                 if label == 'hexwarden_audit':
                     parts = shlex.split(argv[-1])
                     self.assertIn('/a path/$(literal)', parts)
@@ -179,7 +182,13 @@ class OrchestrationTests(unittest.TestCase):
             with patch('android_audit.drozer_checks.shutil.which', return_value='/usr/bin/drozer'):
                 run(c)
             self.assertTrue(all(cmd[0] == '/usr/bin/drozer' for cmd in commands))
-            self.assertFalse(any('run app.service.info' in cmd[-1] for cmd in commands))
+            command_text = [cmd[-1] for cmd in commands]
+            for name in ('app.package.info', 'app.package.shareduid', 'app.activity.info',
+                         'app.service.info', 'app.provider.info', 'app.broadcast.info'):
+                self.assertIn('run ' + name, command_text)
+                self.assertTrue(any(text == 'run ' + name for text in command_text))
+            self.assertFalse(any('app.package.attacksurface' in text for text in command_text))
+            self.assertFalse(any('run app.service.info -a' in text for text in command_text))
             self.assertTrue((c.root / 'integrations/drozer/.drozer_config').exists())
             self.assertEqual(c.result['execution_context']['uid'], 123)
 

@@ -47,7 +47,7 @@ python3 -m hexwarden scan --drozer --package com.example.app \
   --drozer-write-dir /data/local/tmp
 ```
 
-The integration discovers available modules using the CLI's `list` command. It runs built-in `app.package.list`, and for selected packages, `app.package.info`, `app.package.attacksurface`, `app.activity.info`, `app.service.info`, `app.provider.info` and `app.broadcast.info`. Missing modules are skipped with a coverage reason. `--max-apps` also caps the explicitly selected Drozer packages.
+The integration discovers available modules using the CLI's `list` command. It runs built-in `app.package.list`, global `app.package.info`, global `app.package.shareduid`, and global component inventory modules `app.activity.info`, `app.service.info`, `app.provider.info` and `app.broadcast.info`, each without a package argument. This collects the complete package/component inventory exposed by the agent. It does not use `app.package.attacksurface` for a single selected package. Missing modules are skipped with a coverage reason. `--package` and `--max-apps` apply to the separate per-package grant/AppOps checks and bundled agent probes; they do not narrow the global inventory modules.
 
 The bundled `hexwarden.audit` module is likewise invoked through the CLI. A per-run `.drozer_config` and module repository under `integrations/drozer/` load it without changing your home configuration or installing an APK. Its checks are:
 
