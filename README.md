@@ -111,7 +111,7 @@ The banner goes to stderr; `--no-banner` suppresses it. The original `android-au
 |---|---|
 | [Applications](docs/APPLICATIONS.md) | APK extraction, certificate blocklists, permission correlation and shared UIDs |
 | [Networking](docs/NETWORKING.md) | Network inventory, timed PCAP capture and cleartext analysis |
-| [Bluetooth](docs/BLUETOOTH.md) | Host setup, Classic/BLE discovery, reads and connection tests |
+| [Bluetooth](docs/BLUETOOTH.md) | Host setup, Classic/BLE discovery, reads, connection and bounded write-authorization tests |
 | [All checks](docs/CHECKS.md) | Every module's collected data, automated checks, findings and limits |
 | [Integrations](docs/INTEGRATIONS.md) | MobSF, Drozer and EMBA setup |
 | [Coverage](docs/PLAN.md) | All 20 modules, categories and remaining gaps |
@@ -143,7 +143,7 @@ Exit codes: `0` execution completed (possibly with findings or coverage gaps), `
 
 Hexwarden does not acquire root, install applications, invoke app components or reboot devices. `--root` uses an already-root ADB shell or existing `su`. Bluetooth pairing can create a persistent bond; Drozer write tests require explicit target directories and attempt probe cleanup. See the linked guides for these opt-in operations.
 
-Bluetooth write authorization, hardware key attestation, OTA enforcement and app/backend integrity checks still need target-specific validation. Exported APIs and permissive filesystem metadata are review candidates; Drozer access tests establish behavior specifically in the agent's context. The [coverage plan](docs/PLAN.md) details each module's capabilities and gaps.
+Hardware key attestation, OTA enforcement and app/backend integrity checks still need target-specific validation. Exported APIs and permissive filesystem metadata are review candidates; Drozer access tests establish behavior specifically in the agent's context. Bluetooth write probes are target-specific and opt-in; accepted writes still require controlled paired/unpaired validation. The [coverage plan](docs/PLAN.md) details each module's capabilities and gaps.
 
 ## Development
 

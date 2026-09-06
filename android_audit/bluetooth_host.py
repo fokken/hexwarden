@@ -1,11 +1,13 @@
 """Isolated host-side Bluetooth probes, invoked by the Bluetooth audit module.
 
-Uses the host's default adapter and current bonding/security state. This worker
-never sends application writes; a successful connection is not an auth bypass.
+Uses the host's default adapter and current bonding/security state. Write probes
+are opt-in, target-scoped, deterministic, and bounded; a successful operation
+is evidence for the current host context, not proof of an unauthenticated bypass.
 """
 import argparse
 import asyncio
 import json
+import hashlib
 import socket
 import sys
 
@@ -30,9 +32,22 @@ def connect_classic(mac, protocol, endpoint, timeout, socket_factory=None):
     return result
 
 
-async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, client_factory=None):
+def fuzz_payloads(count):
+    """Return small deterministic payloads suitable for authorization probes."""
+    seeds = [b'\x00', b'\xff', b'\x01', b'\x00\xff', b'\xff\x00',
+             b'\x00' * 4, bytes(range(4)), b'\x00' * 16, b'\xff' * 16,
+             bytes(range(32)), b'\x00' * 64, b'\xff' * 64]
+    limit = max(0, min(int(count), 64))
+    while len(seeds) < limit:
+        length = min(64, 1 << (len(seeds) % 7))
+        seeds.append(bytes((index + len(seeds)) & 0xff for index in range(length)))
+    return seeds[:limit]
+
+
+async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, client_factory=None,
+                        write_targets=(), write_payloads=(), fuzz=False, fuzz_count=16):
     result = {'mac': mac, 'status': 'partial', 'pair_requested': pair,
-              'read_requested': read, 'services': [], 'errors': [],
+              'read_requested': read, 'services': [], 'writes': [], 'errors': [],
               'security_context': 'Host may have existing bonds; link authentication/encryption not independently measured.'}
     if scanner is None or client_factory is None:
         try:
@@ -50,6 +65,11 @@ async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, clie
         result['device'] = {'address': device.address, 'name': device.name}
         async with client_factory(device, timeout=timeout, pair=pair) as client:
             result['connected'] = bool(client.is_connected)
+            target_map = {}
+            for target in write_targets:
+                parts = target.split('/', 1)
+                if len(parts) == 2:
+                    target_map[(parts[0].lower(), parts[1].lower())] = target
             for service in client.services:
                 entry = {'uuid': service.uuid, 'handle': service.handle, 'characteristics': []}
                 result['services'].append(entry)
@@ -59,6 +79,32 @@ async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, clie
                         'advertises_write': bool({'write', 'write-without-response', 'authenticated-signed-writes'} & set(props)),
                         'descriptors': [{'uuid': d.uuid, 'handle': d.handle} for d in char.descriptors]}
                     entry['characteristics'].append(characteristic)
+                    target = target_map.get((str(service.uuid).lower(), str(char.uuid).lower()))
+                    if target:
+                        target_map.pop((str(service.uuid).lower(), str(char.uuid).lower()), None)
+                        payloads = [bytes.fromhex(value) for value in write_payloads]
+                        if fuzz:
+                            payloads.extend(fuzz_payloads(fuzz_count))
+                        seen = set()
+                        payloads = [payload for payload in payloads
+                                    if not (payload in seen or seen.add(payload))][:64]
+                        # Prefer acknowledged writes where supported; otherwise use the
+                        # write-without-response form advertised by the characteristic.
+                        response = 'write' in props or 'authenticated-signed-writes' in props
+                        for payload in payloads:
+                            attempt = {'target': target, 'service_uuid': service.uuid,
+                                       'characteristic_uuid': char.uuid, 'handle': char.handle,
+                                       'payload_hex': payload.hex(),
+                                       'payload_length': len(payload),
+                                       'payload_sha256': hashlib.sha256(payload).hexdigest(),
+                                       'advertises_write': characteristic['advertises_write'],
+                                       'response': response, 'status': 'pending'}
+                            try:
+                                await asyncio.wait_for(client.write_gatt_char(char, payload, response=response), min(timeout, 5))
+                                attempt['status'] = 'accepted'
+                            except Exception as exc:
+                                attempt.update(status='rejected', error_type=type(exc).__name__, error=str(exc))
+                            result['writes'].append(attempt)
                     if read and 'read' in props:
                         characteristic['read'] = {'status': 'pending'}
                         try:
@@ -67,7 +113,11 @@ async def enumerate_ble(mac, timeout, read=False, pair=False, scanner=None, clie
                             characteristic['read'] = {'status': 'success', 'length': len(value), 'hex': bytes(value).hex()}
                         except Exception as exc:
                             characteristic['read'] = {'status': 'failed', 'error_type': type(exc).__name__, 'error': str(exc)}
+            for target in target_map.values():
+                result['errors'].append(f'Write target not found in discovered services: {target}')
             result['status'] = 'collected'
+            if target_map:
+                result['status'] = 'partial'
             if any(ch.get('read', {}).get('status') == 'failed' for s in result['services'] for ch in s['characteristics']):
                 result['status'] = 'partial'
 
@@ -87,12 +137,19 @@ def main(argv=None):
     parser.add_argument('--endpoint', type=int)
     parser.add_argument('--read', action='store_true')
     parser.add_argument('--pair', action='store_true')
+    parser.add_argument('--write-target', action='append', default=[])
+    parser.add_argument('--write-payload', action='append', default=[])
+    parser.add_argument('--fuzz', action='store_true')
+    parser.add_argument('--fuzz-count', type=int, default=16)
     args = parser.parse_args(argv)
     if args.mode == 'ble':
         if sys.platform == 'darwin':
             result = {'status': 'partial', 'services': [], 'errors': ['macOS BLE uses OS identifiers, not Bluetooth MAC addresses; use Linux or Windows for this MAC-targeted collector.']}
         else:
-            result = asyncio.run(enumerate_ble(args.mac, args.timeout, args.read, args.pair))
+            result = asyncio.run(enumerate_ble(args.mac, args.timeout, args.read, args.pair,
+                                               write_targets=args.write_target,
+                                               write_payloads=args.write_payload,
+                                               fuzz=args.fuzz, fuzz_count=args.fuzz_count))
     else:
         result = connect_classic(args.mac, args.mode, args.endpoint, args.timeout)
     print(json.dumps(result))

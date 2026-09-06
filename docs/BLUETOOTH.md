@@ -41,12 +41,27 @@ The host's **default Bluetooth adapter** must be powered and usable by the curre
 
 * `--bt-mode both|classic|ble` selects transports; default `both`.
 * Classic SDP discovery saves service records, advertised RFCOMM channels and L2CAP PSMs, using [BlueZ sdptool](https://github.com/bluez/bluez/blob/master/tools/sdptool.c).
-* BLE connects and saves service/characteristic UUIDs, handles, descriptors and advertised properties. Write-capable characteristics become informational review candidates; no writes are attempted.
+* BLE connects and saves service/characteristic UUIDs, handles, descriptors and advertised properties. Write-capable characteristics become informational review candidates.
 * `--bt-read` attempts characteristics advertising read support and records successes/failures. Values are retained as hex in raw evidence and excluded from finding text. No descriptor reads or notification subscriptions are performed.
 * `--bt-connect-classic` connects and immediately closes up to 32 unique SDP-advertised RFCOMM/L2CAP endpoints, with a maximum five-second timeout each. No application payload is sent. This is not a channel sweep.
 * `--bt-pair` explicitly requests pairing through Bleak. Pairing can prompt and persist; the tool does not unpair afterward. Existing bonds are used even without this flag, and OS security handling may prompt during connections/reads.
 * `--bt-timeout` bounds each discovery phase (default 30 seconds); the BLE budget includes discovery, connection, pairing, enumeration and reads. Individual reads have a five-second maximum within that budget. Increase it for interactive pairing or many characteristics.
 
+Explicit BLE authorization probes require a target and approved payload:
+
+```sh
+python3 -m hexwarden scan --modules bluetooth --bt-mac AA:BB:CC:DD:EE:FF --bt-mode ble \
+  --bt-write-target SERVICE_UUID/CHARACTERISTIC_UUID --bt-write-payload 00
+```
+
+Add `--bt-fuzz --bt-fuzz-count 8` for a bounded deterministic probe set. Fuzzing
+requires an explicit target and sends at most 64 payloads of at most 64 bytes;
+it never uses random or unbounded input. Writes can change device state. Accepted
+writes describe the current adapter, bond and link-security context, not proof of
+unauthenticated access. Exact payloads are retained in the restricted
+`ble-write-probes.json` plan and worker evidence, and logged with each result so a
+crash can be reproduced; finding summaries retain only length and SHA-256.
+
 All host command output and structured BLE results are stored under `evidence/bluetooth/`, alongside `sdp-services.json` and available before/after `bluetoothctl` host-state snapshots. Missing tools, absent targets, denied reads and timeouts produce coverage limitations.
 
-Successful reads/connections reflect the **current host security context**, not proof of unauthenticated access or a vulnerability. GATT properties do not establish effective write authorization. The supplied MAC is not independently tied to the ADB target; BLE private addresses can change or differ from the Classic address. SDP may omit non-browsable services. Connection attempts and reads can trigger device behavior; actual write testing needs a device-specific payload and remains unimplemented.
+Successful reads/connections reflect the **current host security context**, not proof of unauthenticated access or a vulnerability. GATT properties do not establish effective write authorization. The supplied MAC is not independently tied to the ADB target; BLE private addresses can change or differ from the Classic address. SDP may omit non-browsable services. Connection attempts, reads and writes can trigger device behavior. Notification handling and application protocol payloads remain outside this module's scope.

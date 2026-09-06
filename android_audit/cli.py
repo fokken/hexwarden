@@ -32,6 +32,18 @@ def bluetooth_mac(value):
     return value.upper()
 
 
+def bluetooth_write_target(value):
+    if not re.fullmatch(r'[^/\s]+/[^/\s]+', value):
+        raise argparse.ArgumentTypeError('expected SERVICE_UUID/CHARACTERISTIC_UUID')
+    return value
+
+
+def bluetooth_payload(value):
+    if not re.fullmatch(r'(?:[0-9A-Fa-f]{2}){1,64}', value):
+        raise argparse.ArgumentTypeError('expected 1-64 bytes of hexadecimal data')
+    return value.lower()
+
+
 def device_path(value):
     if not value.startswith('/') or any(ord(char) < 32 for char in value):
         raise argparse.ArgumentTypeError('expected an absolute device path without control characters')
@@ -73,6 +85,12 @@ def parser():
     scan.add_argument('--bt-read', action='store_true', help='attempt reads of BLE characteristics advertising read support')
     scan.add_argument('--bt-pair', action='store_true', help='request BLE pairing; may prompt and create a persistent bond')
     scan.add_argument('--bt-connect-classic', action='store_true', help='connect then close advertised RFCOMM/L2CAP endpoints; no payloads')
+    scan.add_argument('--bt-write-target', action='append', type=bluetooth_write_target, default=[], metavar='SERVICE/CHARACTERISTIC',
+                      help='explicit BLE characteristic target for authorization writes; repeatable')
+    scan.add_argument('--bt-write-payload', action='append', type=bluetooth_payload, default=[], metavar='HEX',
+                      help='hex payload for an explicit BLE write probe; repeatable')
+    scan.add_argument('--bt-fuzz', action='store_true', help='run bounded deterministic BLE write probes against explicit targets')
+    scan.add_argument('--bt-fuzz-count', type=positive, default=16, help='maximum deterministic BLE fuzz payloads per target (default 16)')
     scan.add_argument('--extract-apks', action='store_true')
     scan.add_argument('--privileged-api-exclude-prefix', action='append', default=[],
                       help='additional package prefix to exclude from HW-APP-002 (repeatable)')
@@ -178,12 +196,22 @@ def main(argv=None):
         p.error('--drozer-entry-limit must not exceed 1000')
     if args.bt_mac and 'bluetooth' not in selected:
         p.error('--bt-mac requires selecting the bluetooth module')
-    if (args.bt_read or args.bt_pair or args.bt_connect_classic) and not args.bt_mac:
+    if (args.bt_read or args.bt_pair or args.bt_connect_classic or args.bt_write_target or args.bt_write_payload or args.bt_fuzz) and not args.bt_mac:
         p.error('Bluetooth read/pair/connect options require --bt-mac')
     if (args.bt_read or args.bt_pair) and args.bt_mode == 'classic':
         p.error('--bt-read/--bt-pair require BLE mode')
     if args.bt_connect_classic and args.bt_mode == 'ble':
         p.error('--bt-connect-classic requires classic mode')
+    if (args.bt_write_target or args.bt_write_payload or args.bt_fuzz) and args.bt_mode == 'classic':
+        p.error('BLE write/fuzz options require BLE mode')
+    if args.bt_write_payload and not args.bt_write_target:
+        p.error('--bt-write-payload requires at least one --bt-write-target')
+    if args.bt_fuzz and not args.bt_write_target:
+        p.error('--bt-fuzz requires at least one --bt-write-target')
+    if args.bt_write_target and not args.bt_write_payload and not args.bt_fuzz:
+        p.error('--bt-write-target requires --bt-write-payload or --bt-fuzz')
+    if args.bt_fuzz_count > 64:
+        p.error('--bt-fuzz-count must not exceed 64')
     if args.mobsf_url and not args.mobsf:
         p.error('--mobsf-url requires --mobsf')
     if args.mobsf:
@@ -220,7 +248,9 @@ def main(argv=None):
                           'privileged_api_no_default_excludes': args.privileged_api_no_default_excludes}}
     document['scope']['bluetooth'] = {
         'mac': args.bt_mac, 'mode': args.bt_mode, 'timeout': args.bt_timeout,
-        'read': args.bt_read, 'pair': args.bt_pair, 'connect_classic': args.bt_connect_classic}
+        'read': args.bt_read, 'pair': args.bt_pair, 'connect_classic': args.bt_connect_classic,
+        'write_targets': args.bt_write_target, 'write_payload_count': len(args.bt_write_payload),
+        'fuzz': args.bt_fuzz, 'fuzz_count': args.bt_fuzz_count}
     document['scope']['drozer'] = {'enabled': args.drozer, 'server': args.drozer_server,
         'list_paths': args.drozer_list_path or ['/data', '/data/local/tmp', '/sdcard'],
         'read_paths': args.drozer_read_path, 'readable_paths': args.drozer_readable_path,

@@ -9,7 +9,7 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import patch
 
-from android_audit.bluetooth_host import connect_classic, enumerate_ble
+from android_audit.bluetooth_host import connect_classic, enumerate_ble, fuzz_payloads
 from android_audit.cli import bluetooth_mac, main
 from android_audit.core import Context
 from android_audit.modules.bluetooth import host_tests, parse_sdp
@@ -58,6 +58,12 @@ class SDPTests(unittest.TestCase):
             with self.assertRaises(argparse.ArgumentTypeError):
                 bluetooth_mac(value)
 
+    def test_fuzz_payloads_are_bounded_and_deterministic(self):
+        first = fuzz_payloads(64)
+        self.assertEqual(first, fuzz_payloads(64))
+        self.assertLessEqual(len(first), 64)
+        self.assertTrue(all(0 < len(payload) <= 64 for payload in first))
+
     def test_cli_rejects_incompatible_options_before_adb(self):
         for args in [['--bt-read'], ['--bt-mac', MAC, '--modules', 'usb'],
                      ['--bt-mac', MAC, '--bt-mode', 'classic', '--bt-pair'],
@@ -93,6 +99,8 @@ class BLETests(unittest.IsolatedAsyncioTestCase):
                 if denied:
                     raise PermissionError('authentication required')
                 return b'sensitive-value'
+            async def write_gatt_char(self, char, payload, response=True):
+                owner.calls.append(('write', char.handle, bytes(payload), response))
         return Scanner, Client
 
     async def test_discovery_does_not_read_or_pair(self):
@@ -137,6 +145,18 @@ class BLETests(unittest.IsolatedAsyncioTestCase):
         _, client = self.dependencies()
         result = await enumerate_ble(MAC, 2, scanner=Scanner, client_factory=client)
         self.assertIn('not observed', result['errors'][0])
+
+    async def test_targeted_write_and_fuzz_record_metadata_only(self):
+        scanner, client = self.dependencies()
+        result = await enumerate_ble(MAC, 2, scanner=scanner, client_factory=client,
+                                     write_targets=['service/char'], write_payloads=['00'],
+                                     fuzz=True, fuzz_count=2)
+        self.assertEqual(result['status'], 'collected')
+        self.assertEqual(len(result['writes']), 2)
+        self.assertTrue(all(item['status'] == 'accepted' for item in result['writes']))
+        self.assertEqual(result['writes'][0]['payload_hex'], '00')
+        self.assertIn('payload_hex', result['writes'][1])
+        self.assertTrue(any(call[0] == 'write' for call in self.calls))
 
 
 class HostTests(unittest.TestCase):

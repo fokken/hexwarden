@@ -1,8 +1,10 @@
 import json
+import logging
 import re
 import shutil
 import sys
 from ..core import write_json
+from ..bluetooth_host import fuzz_payloads
 
 CATEGORY = 'wireless'
 
@@ -103,6 +105,34 @@ def host_tests(c):
             c.note('Classic service discovery requires Linux and host sdptool (BlueZ tools).')
     if c.args.bt_mode in ('both', 'ble'):
         extra = (['--read'] if c.args.bt_read else []) + (['--pair'] if c.args.bt_pair else [])
+        write_plan_refs = []
+        write_targets = getattr(c.args, 'bt_write_target', [])
+        write_values = getattr(c.args, 'bt_write_payload', [])
+        fuzz_enabled = getattr(c.args, 'bt_fuzz', False)
+        if write_targets and (write_values or fuzz_enabled):
+            payloads = [bytes.fromhex(value) for value in write_values]
+            if fuzz_enabled:
+                payloads.extend(fuzz_payloads(getattr(c.args, 'bt_fuzz_count', 16)))
+            unique = []
+            seen = set()
+            for payload in payloads:
+                if payload not in seen:
+                    seen.add(payload)
+                    unique.append(payload)
+            unique = unique[:64]
+            plan_path = c.directory / 'ble-write-probes.json'
+            write_json(plan_path, {'mac': mac, 'targets': write_targets,
+                                   'fuzz': fuzz_enabled,
+                                   'payloads_hex': [payload.hex() for payload in unique]})
+            plan_ref = {'path': str(plan_path.relative_to(c.root)), 'kind': 'write-plan'}
+            c.result['evidence'].append(plan_ref)
+            write_plan_refs = [plan_ref]
+        for target in getattr(c.args, 'bt_write_target', []):
+            extra += ['--write-target', target]
+        for payload in getattr(c.args, 'bt_write_payload', []):
+            extra += ['--write-payload', payload]
+        if getattr(c.args, 'bt_fuzz', False):
+            extra += ['--fuzz', '--fuzz-count', str(getattr(c.args, 'bt_fuzz_count', 16))]
         result = worker(c, 'ble', extra)
         c.check('ble_service_inspection', bool(result) and result.get('status') == 'collected', scope=mac)
         if result:
@@ -120,9 +150,23 @@ def host_tests(c):
                     if char.get('read', {}).get('status') == 'success':
                         c.finding('HW-BT-004',
                                   {**detail, 'bytes_read': char['read']['length']}, 'info', 'high', evidence=refs)
+            for write in result.get('writes', []):
+                detail = {'mac': mac, 'target': write['target'], 'service_uuid': write['service_uuid'],
+                          'characteristic_uuid': write['characteristic_uuid'], 'handle': write['handle'],
+                          'payload_length': write['payload_length'], 'payload_sha256': write['payload_sha256'],
+                          'response': write['response'], 'advertises_write': write['advertises_write'],
+                          'status': write['status']}
+                refs = [{**ref, 'locator': {'target': write['target'], 'characteristic_handle': write['handle']}}
+                        for ref in (c.latest_evidence + write_plan_refs)]
+                logging.info('BLE write probe target=%s payload=%s status=%s',
+                             write['target'], write.get('payload_hex', ''), write['status'])
+                if write['status'] == 'accepted':
+                    c.finding('HW-BT-005', detail, 'info', 'high', evidence=refs)
+                else:
+                    c.note(f"BLE write probe rejected for {write['target']}; this is evidence for the current host context only.")
     if shutil.which('bluetoothctl') and sys.platform.startswith('linux'):
         c.command(['bluetoothctl', 'info', mac], 'host_target_after')
-    c.note('Host tests use the default adapter and its existing bonds. Successful reads/connections do not prove unauthenticated access. GATT write flags are advertised capabilities, not verified write authorization. No characteristic writes, notifications or application payloads are sent. SDP may omit hidden/non-browsable endpoints. Target MAC is user-supplied and not verified against the ADB device; BLE privacy may require a different/current address.')
+    c.note('Host tests use the default adapter and its existing bonds. Successful reads/connections do not prove unauthenticated access. GATT write flags are advertised capabilities; explicit write probes and bounded deterministic fuzzing require user-supplied targets and are limited to 64 payloads of 64 bytes or less. SDP may omit hidden/non-browsable endpoints. Target MAC is user-supplied and not verified against the ADB device; BLE privacy may require a different/current address.')
 
 
 def run(c):
