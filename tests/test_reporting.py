@@ -112,10 +112,14 @@ class ReportingTests(unittest.TestCase):
             report(c.root, document)
             decoded = json.loads((c.root / 'report.json').read_text())
             text = (c.root / 'report.txt').read_text()
+            html = (c.root / 'report.html').read_text()
             self.assertEqual(decoded['summary']['requested_modules_not_started'], ['never_started'])
             self.assertEqual(decoded['summary']['by_classification'], {'review_candidate': 1})
             for phrase in ('HW-LOG-001', 'Action:', 'Verify:', 'raw.txt', 'never_started'):
                 self.assertIn(phrase, text)
+            self.assertIn('Hexwarden security report', html)
+            self.assertIn('HW-LOG-001', html)
+            self.assertNotIn('<script', html.lower())
 
     def test_interruption_cannot_look_complete(self):
         with tempfile.TemporaryDirectory() as tmp:

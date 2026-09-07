@@ -14,6 +14,7 @@ from . import __version__
 from .branding import BANNER
 from .capabilities import discover
 from .reporting import summarize
+from .html_report import write_html_report
 from .core import Context, inventory, write_json
 from .integrations import external
 from .modules import registry
@@ -153,6 +154,7 @@ def parser():
 def report(root, document):
     summarize(document)
     write_json(root / 'report.json', document)
+    write_html_report(root / 'report.json', root / 'report.html')
     lines = ['Hexwarden - Android security audit', 'Run: ' + document['run_id'],
              'Device: ' + str(document.get('device')), 'Status: ' + document['status'],
              'Coverage status is not a security pass/fail.', '']

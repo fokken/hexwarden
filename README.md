@@ -143,6 +143,7 @@ The banner goes to stderr; `--no-banner` suppresses it. The original `android-au
 data/<timestamp>-<run-id>/
   report.txt           Human-readable findings and coverage
   report.json          Structured report (schema version 2)
+  report.html          Self-contained offline HTML report generated from report.json
   audit.log            Execution log
   adb-devices.txt      ADB discovery output
   capabilities.json    Host/device capability discovery

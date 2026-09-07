@@ -61,6 +61,7 @@ Paths below are relative to the run directory. Findings remain in both `report.t
 | `evidence/app_extraction/blocked-certs.json` | Normalized policy snapshot when `--blocked-certs` is supplied |
 | `evidence/app_extraction/signer-policy.json` | Per extracted APK: package, path, signature evidence, effective `blocked_sha256`, `matched_sha256` and policy status |
 | `evidence/custom_permissions/permission-correlation.json` | Permission declarations, requesters, protected components and scoped declaration status |
+| `report.html` | Self-contained readable rendering generated from `report.json`; links to relative evidence paths |
 | `integrations/drozer/agent-checks.json` | Agent identity and individual probe events |
 | `evidence/drozer/shared-uids.json` | Full UID groups, visible packages, privilege indicators and source event references |
 
