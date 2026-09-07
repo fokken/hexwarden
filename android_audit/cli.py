@@ -227,6 +227,10 @@ def main(argv=None):
             p.error('invalid package name')
     if args.modules:
         selected = list(args.modules)
+    elif args.drozer_runtime and not args.category:
+        # Runtime authorization is an explicit integration workflow; do not
+        # silently rerun every device collector unless requested.
+        selected = []
     elif args.radamsa_fuzz and not args.category:
         # The explicit fuzz flag is a separate workflow; do not silently rerun
         # every collection module unless the caller asks for them.
@@ -242,7 +246,7 @@ def main(argv=None):
     selected = list(dict.fromkeys(name for name in selected if not args.category or modules[name].CATEGORY in args.category))
     if args.radamsa_fuzz and 'radamsa_fuzz' not in selected:
         selected.append('radamsa_fuzz')
-    if not selected and not args.mobsf:
+    if not selected and not args.mobsf and not args.drozer_runtime:
         p.error('selection contains no modules')
     if 'radamsa_fuzz' in selected and not args.radamsa_fuzz:
         p.error('radamsa_fuzz requires --radamsa-fuzz')

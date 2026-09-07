@@ -71,6 +71,11 @@ python3 -m hexwarden scan --drozer --drozer-runtime \
   --drozer-finduris-package com.example.app
 ```
 
+When `--drozer-runtime` is used without `--modules` or `--category`, this is a
+standalone runtime-test workflow: Hexwarden runs preflight and the Drozer
+integration without running the regular device collection modules. Add explicit
+modules or a category when you want to combine runtime tests with another scan.
+
 The integration discovers available modules using the CLI's `list` command. It runs built-in `app.package.list`, global `app.package.info`, global `app.package.shareduid`, and global component inventory modules `app.activity.info`, `app.service.info`, `app.provider.info` and `app.broadcast.info`, each without a package argument. This collects the complete package/component inventory exposed by the agent. It does not use `app.package.attacksurface` for a single selected package. Missing modules are skipped with a coverage reason. `--package` and `--max-apps` apply to the separate per-package grant/AppOps checks and bundled agent probes; they do not narrow the global inventory modules.
 
 The bundled `hexwarden.audit` module is likewise invoked through the CLI. A per-run `.drozer_config` and module repository under `integrations/drozer/` load it without changing your home configuration or installing an APK. Its checks are:
