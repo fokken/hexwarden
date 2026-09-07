@@ -39,6 +39,10 @@ python3 -m hexwarden scan --modules bluetooth \
 # BLE-only assessment with explicit pairing (may prompt on the device/host)
 python3 -m hexwarden scan --modules bluetooth \
   --bt-mac AA:BB:CC:DD:EE:FF --bt-mode ble --bt-pair --bt-read --bt-timeout 60
+
+# Collect the Android built-in HCI snoop log for later Wireshark/tshark review
+python3 -m hexwarden scan --modules bluetooth \
+  --bt-hcisnoop-seconds 60
 ```
 
 The host's **default Bluetooth adapter** must be powered and usable by the current user. Linux supports both transports; Classic discovery requires BlueZ `sdptool` (some distributions package it with deprecated BlueZ tools). BLE uses [Bleak](https://bleak.readthedocs.io/en/latest/api/client.html) and supports MAC targeting on Linux/Windows. macOS MAC targeting is not supported. No tools are automatically installed or adapters powered on. ADB is still required by the main scan command. `--root` affects device-side ADB reads, not host Bluetooth permissions.
@@ -51,6 +55,7 @@ The host's **default Bluetooth adapter** must be powered and usable by the curre
 * `--bt-classic-payload HEX` sends explicitly supplied payloads after connecting to each advertised Classic endpoint. Payloads are retained in restricted evidence with length and SHA-256 metadata; accepted payloads are review observations, not proof of unauthenticated access.
 * `--bt-pair` explicitly requests pairing through Bleak. Pairing can prompt and persist; the tool does not unpair afterward. Existing bonds are used even without this flag, and OS security handling may prompt during connections/reads.
 * `--bt-notify` subscribes to BLE characteristics advertising `notify` or `indicate` for the bounded `--bt-notify-seconds` interval, then unsubscribes. Notification events are retained in raw evidence with timestamps and values; `HW-BT-007` records a successful subscription without publishing values in finding text.
+* `--bt-hcisnoop-seconds N` waits for `N` seconds, then pulls Android's built-in Bluetooth HCI snoop file from common OEM locations under `evidence/bluetooth/hcisnoop/`. Use `--bt-hcisnoop-path /path/to/btsnoop_hci.log` for an additional device path. Enable **Bluetooth HCI snoop log** in Android Developer Options before the run; Hexwarden does not change that setting. The raw btsnoop file and metadata are retained for later Wireshark/tshark analysis. Protected `/data` locations may require `--root`.
 * `--bt-timeout` bounds each discovery phase (default 30 seconds); the BLE budget includes discovery, connection, pairing, enumeration and reads. Individual reads have a five-second maximum within that budget. Increase it for interactive pairing or many characteristics.
 
 Explicit BLE authorization probes require a target and approved payload:

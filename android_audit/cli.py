@@ -124,6 +124,10 @@ def parser():
                       help='hex payload for an explicit BLE write probe; repeatable')
     scan.add_argument('--bt-fuzz', action='store_true', help='run bounded deterministic BLE write probes against explicit targets')
     scan.add_argument('--bt-fuzz-count', type=positive, default=16, help='maximum deterministic BLE fuzz payloads per target (default 16)')
+    scan.add_argument('--bt-hcisnoop-seconds', type=positive, metavar='SECONDS',
+                      help='collect Android built-in Bluetooth HCI snoop logs for this bounded interval')
+    scan.add_argument('--bt-hcisnoop-path', type=device_path, action='append', default=[], metavar='PATH',
+                      help='additional Android btsnoop path to pull; repeatable')
     scan.add_argument('--extract-apks', action='store_true')
     scan.add_argument('--privileged-api-exclude-prefix', action='append', default=[],
                       help='additional package prefix to exclude from HW-APP-002 (repeatable)')
@@ -257,6 +261,12 @@ def main(argv=None):
         p.error('--drozer-entry-limit must not exceed 1000')
     if args.bt_mac and 'bluetooth' not in selected:
         p.error('--bt-mac requires selecting the bluetooth module')
+    if (args.bt_hcisnoop_seconds or args.bt_hcisnoop_path) and 'bluetooth' not in selected:
+        p.error('--bt-hcisnoop options require selecting the bluetooth module')
+    if args.bt_hcisnoop_seconds and args.bt_hcisnoop_seconds > 3600:
+        p.error('--bt-hcisnoop-seconds must not exceed 3600')
+    if args.bt_hcisnoop_path and not args.bt_hcisnoop_seconds:
+        p.error('--bt-hcisnoop-path requires --bt-hcisnoop-seconds')
     if (args.bt_read or args.bt_pair or args.bt_connect_classic or args.bt_classic_payload or args.bt_notify or args.bt_write_target or args.bt_write_payload or args.bt_fuzz) and not args.bt_mac:
         p.error('Bluetooth read/pair/connect options require --bt-mac')
     if (args.bt_read or args.bt_pair) and args.bt_mode == 'classic':
@@ -329,7 +339,8 @@ def main(argv=None):
         'classic_payload_count': len(args.bt_classic_payload), 'notify': args.bt_notify,
         'notify_seconds': args.bt_notify_seconds,
         'write_targets': args.bt_write_target, 'write_payload_count': len(args.bt_write_payload),
-        'fuzz': args.bt_fuzz, 'fuzz_count': args.bt_fuzz_count}
+        'fuzz': args.bt_fuzz, 'fuzz_count': args.bt_fuzz_count,
+        'hcisnoop_seconds': args.bt_hcisnoop_seconds, 'hcisnoop_paths': args.bt_hcisnoop_path}
     document['scope']['drozer'] = {'enabled': args.drozer, 'server': args.drozer_server,
         'list_paths': args.drozer_list_path or ['/data', '/data/local/tmp', '/sdcard'],
         'read_paths': args.drozer_read_path, 'readable_paths': args.drozer_readable_path,

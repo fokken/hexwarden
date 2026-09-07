@@ -33,7 +33,7 @@ This is the inventory of Hexwarden's built-in collection and analysis. A success
 
 | Module | Collected information | Automated checks and findings | Limits |
 |---|---|---|---|
-| `bluetooth` | Android Bluetooth manager/service/sysfs inventory; optional host adapter state, Classic SDP services, RFCOMM/L2CAP endpoints and explicit payloads, BLE services/characteristics/descriptors/properties, notification events and write-probe metadata | `HW-BT-001` advertised Classic services; `HW-BT-002` successful Classic endpoint connections; `HW-BT-003` advertised BLE write support; `HW-BT-004` readable BLE characteristics; `HW-BT-005` accepted explicit BLE write probe; `HW-BT-006` accepted Classic payload; `HW-BT-007` accepted BLE notification subscription | Host MAC is user-supplied and not tied to ADB; existing bonds affect results; payloads and notification subscriptions are opt-in, target-scoped and bounded; notification values remain raw evidence |
+| `bluetooth` | Android Bluetooth manager/service/sysfs inventory; optional Android built-in HCI snoop capture; optional host adapter state, Classic SDP services, RFCOMM/L2CAP endpoints and explicit payloads, BLE services/characteristics/descriptors/properties, notification events and write-probe metadata | `HW-BT-001` advertised Classic services; `HW-BT-002` successful Classic endpoint connections; `HW-BT-003` advertised BLE write support; `HW-BT-004` readable BLE characteristics; `HW-BT-005` accepted explicit BLE write probe; `HW-BT-006` accepted Classic payload; `HW-BT-007` accepted BLE notification subscription | HCI snoop collection requires Developer Options logging to already be enabled and may require root for `/data`; host MAC is user-supplied and not tied to ADB; existing bonds affect results; payloads and notification subscriptions are opt-in, target-scoped and bounded; notification values remain raw evidence |
 
 ## Running applications
 
@@ -71,6 +71,6 @@ Every run contains `report.txt`, `report.json`, `audit.log`, `capabilities.json`
 - `shared-uids.json` and Drozer `agent-checks.json`
 - MobSF status, endpoint responses and validated `report_json.json`
 - `traffic.pcap` and capture metadata for passive analysis
-- Bluetooth SDP and structured BLE results
+- Bluetooth SDP, structured BLE results and optional Android btsnoop HCI captures
 
 Use [FINDINGS.md](FINDINGS.md) for the complete finding-code catalog. Use [REPORT_FORMAT.md](REPORT_FORMAT.md) for coverage states, finding fields and evidence locators. Use [PLAN.md](PLAN.md) for the module-level roadmap and known gaps.

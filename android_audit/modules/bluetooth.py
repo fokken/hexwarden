@@ -3,10 +3,92 @@ import logging
 import re
 import shutil
 import sys
+import time
+import shlex
+from pathlib import Path
 from ..core import write_json
 from ..bluetooth_host import fuzz_payloads
 
 CATEGORY = 'wireless'
+
+DEFAULT_HCI_SNOOP_PATHS = (
+    '/data/misc/bluetooth/logs/btsnoop_hci.log',
+    '/data/misc/bluetooth/logs/btsnoop_hci.cfa',
+    '/sdcard/btsnoop_hci.log',
+    '/sdcard/btsnoop_hci.cfa',
+)
+
+
+def collect_hcisnoop(c):
+    """Collect Android's built-in HCI snoop log after a bounded interval.
+
+    Android/OEM releases place the btsnoop file in different locations.  The
+    logger is intentionally not enabled or disabled here: changing Developer
+    Options would alter device state and can require a reboot.  We only pull
+    files that are already readable through the selected ADB context.
+    """
+    seconds = getattr(c.args, 'bt_hcisnoop_seconds', None)
+    if not seconds:
+        return
+    paths = list(dict.fromkeys(DEFAULT_HCI_SNOOP_PATHS + tuple(getattr(c.args, 'bt_hcisnoop_path', []))))
+    setting = c.setting('global', 'bluetooth_hci_log')
+    mode = c.prop('persist.bluetooth.btsnooplogmode')
+    enabled_values = {'1', 'true', 'on', 'full', 'filtered', 'snooplog'}
+    enabled = any(str(value).strip().lower() in enabled_values for value in (setting, mode) if value is not None)
+    c.check('hcisnoop_logging_enabled', enabled, scope={'setting': setting, 'mode': mode},
+            reason='Android HCI snoop logging does not appear enabled; enable it in Developer Options before collecting.'
+                   if not enabled else None)
+    if not enabled:
+        c.note('Android HCI snoop logging is not reported as enabled; the resulting capture may be empty. Enable Bluetooth HCI snoop log in Developer Options before repeating.')
+
+    c.note(f'Waiting {seconds} second(s) for Android HCI snoop traffic; existing log files will be pulled afterward.')
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(1.0, remaining))
+
+    destination = c.directory / 'hcisnoop'
+    destination.mkdir(parents=True, exist_ok=True)
+    pulled = []
+    for index, remote in enumerate(paths, 1):
+        # A normal shell check works for shared storage and records why a
+        # protected /data path could not be collected. Root collection is only
+        # attempted when the caller explicitly selected --root.
+        check = c.shell('ls -l ' + shlex.quote(remote), f'hcisnoop_check_{index}')
+        if check is None and c.args.root:
+            check = c.shell('ls -l ' + shlex.quote(remote), f'hcisnoop_root_check_{index}', root=True)
+        if check is None:
+            continue
+        local = destination / f'{index:02d}-{Path(remote).name}'
+        value = c.command([c.args.adb, '-s', c.args.serial, 'pull', remote, str(local)],
+                          f'hcisnoop_pull_{index}', timeout=max(c.args.timeout, 30))
+        if (value is None or not local.is_file()) and c.args.root:
+            # adb pull cannot elevate. Use the already-authorized su context to
+            # stream protected files, retaining the command evidence as well.
+            streamed = c.command([c.args.adb, '-s', c.args.serial, 'exec-out', 'su', '-c',
+                                  'cat ' + shlex.quote(remote)], f'hcisnoop_root_pull_{index}',
+                                 timeout=max(c.args.timeout, 30), binary=True)
+            if streamed is not None and c.latest_evidence:
+                source = c.root / c.latest_evidence[0]['path']
+                if source.is_file():
+                    shutil.copyfile(source, local)
+        if not local.is_file():
+            continue
+        record = {'remote_path': remote, 'path': str(local.relative_to(c.root)), 'size': local.stat().st_size}
+        pulled.append(record)
+        c.result['evidence'].append({'path': record['path'], 'kind': 'hcisnoop', 'remote_path': remote,
+                                     'size': record['size']})
+    metadata = {'duration_seconds': seconds, 'setting': setting, 'mode': mode,
+                'paths_checked': paths, 'files': pulled}
+    metadata_path = c.directory / 'hcisnoop' / 'metadata.json'
+    write_json(metadata_path, metadata)
+    c.result['evidence'].append({'path': str(metadata_path.relative_to(c.root)), 'kind': 'derived'})
+    if pulled:
+        c.note(f'Collected {len(pulled)} Android HCI snoop file(s); inspect the btsnoop evidence with Wireshark or tshark.')
+    else:
+        c.note('No readable Android HCI snoop file was found at the known or configured paths.')
 
 
 def parse_sdp(text):
@@ -193,6 +275,7 @@ def run(c):
     c.shell('dumpsys bluetooth_manager', 'bluetooth_manager')
     c.shell('service list', 'binder_services')
     c.shell('ls -lZ /sys/class/bluetooth', 'bluetooth_sysfs')
+    collect_hcisnoop(c)
     if c.args.bt_mac:
         host_tests(c)
     else:
