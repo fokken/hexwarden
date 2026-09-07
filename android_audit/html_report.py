@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+from collections import Counter
 from pathlib import Path
 
 
@@ -36,10 +37,11 @@ def render(document):
             ('Manual review', summary.get('modules_requiring_manual_verification', 0)),
         )
     )
-    finding_rows = []
-    for finding in findings:
+    rule_counts = Counter(finding.get('rule_id', '') for finding in findings)
+
+    def render_finding(finding, nested=False):
         refs = ''.join(_evidence(ref) for ref in finding.get('evidence', [])) or '<li>No evidence reference</li>'
-        finding_rows.append(f'''<details class="finding {html.escape(finding.get('severity', 'info'))}">
+        return f'''<details class="finding {"nested" if nested else ""} {html.escape(finding.get('severity', 'info'))}">
 <summary><span class="badge">{_text(finding.get('severity', 'info'))}</span>
 <strong>{_text(finding.get('rule_id', ''))}</strong> {_text(finding.get('title', ''))}</summary>
 <div class="finding-body"><p><b>Classification:</b> {_text(finding.get('classification', ''))}
@@ -49,7 +51,21 @@ def render(document):
 <p><b>Detail</b></p><pre>{_json(finding.get('detail', {}))}</pre>
 <p><b>Action:</b> {_text(finding.get('remediation', ''))}</p>
 <p><b>Verify:</b> {_text(finding.get('verification', ''))}</p>
-<p><b>Evidence</b></p><ul>{refs}</ul></div></details>''')
+<p><b>Evidence</b></p><ul>{refs}</ul></div></details>'''
+    finding_rows = []
+    grouped = set()
+    for finding in findings:
+        rule_id = finding.get('rule_id', '')
+        if rule_counts[rule_id] > 1:
+            if rule_id in grouped:
+                continue
+            grouped.add(rule_id)
+            members = [item for item in findings if item.get('rule_id', '') == rule_id]
+            finding_rows.append(f'''<details class="finding-group">
+<summary><strong>{_text(rule_id)}</strong> {_text(finding.get('title', ''))} <span class="muted">({len(members)} findings)</span></summary>
+<div class="group-body">{''.join(render_finding(item, nested=True) for item in members)}</div></details>''')
+        else:
+            finding_rows.append(render_finding(finding))
     modules = []
     for module in document.get('modules', []):
         coverage = module.get('coverage', {})
@@ -71,7 +87,7 @@ def render(document):
 main {{ max-width:1200px; margin:auto }} h1,h2 {{ line-height:1.2 }} h1 {{ margin-bottom:.25rem }} h2 {{ margin-top:2rem }} .muted {{ color:var(--muted) }}
 .cards {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1rem; margin:1.5rem 0 }} .card, details, table {{ background:var(--panel); border:1px solid var(--line); border-radius:8px }} .card {{ padding:1rem }} .card strong {{ display:block; font-size:1.8rem }} .card span {{ color:var(--muted) }}
 table {{ width:100%; border-collapse:collapse; overflow:hidden }} th,td {{ padding:.65rem .75rem; border-bottom:1px solid var(--line); text-align:left }} th {{ color:var(--muted) }}
-details {{ margin:.7rem 0 }} summary {{ cursor:pointer; padding:.8rem 1rem }} .finding-body {{ padding:0 1rem 1rem }} .badge {{ border-radius:999px; padding:.15rem .5rem; margin-right:.5rem; background:#405267; font-size:.8rem; text-transform:uppercase }} .high .badge {{ background:#8c3030 }}
+details {{ margin:.7rem 0 }} summary {{ cursor:pointer; padding:.8rem 1rem }} .finding-body {{ padding:0 1rem 1rem }} .finding-group {{ border-color:#4b6075 }} .group-body {{ padding:.2rem .8rem .8rem }} .finding.nested {{ margin:.6rem 0; background:#121a23 }} .badge {{ border-radius:999px; padding:.15rem .5rem; margin-right:.5rem; background:#405267; font-size:.8rem; text-transform:uppercase }} .high .badge {{ background:#8c3030 }}
 pre {{ padding:.8rem; overflow:auto; background:#0b1016; border-radius:5px; white-space:pre-wrap; overflow-wrap:anywhere }} a {{ color:var(--accent) }} code {{ color:var(--muted) }}
 </style></head><body><main>
 <h1>Hexwarden security report</h1><p class="muted">Run <b>{_text(document.get('run_id', ''))}</b> · Device {_text(document.get('device', ''))} · Status {_text(document.get('status', ''))}</p>

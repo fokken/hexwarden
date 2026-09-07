@@ -6,6 +6,7 @@ import unittest
 from android_audit.core import Context
 from android_audit.findings import RULES, instance_id
 from android_audit.reporting import module_coverage, summarize
+from android_audit.html_report import render
 from android_audit.cli import report
 
 
@@ -128,6 +129,17 @@ class ReportingTests(unittest.TestCase):
             c.check('first', True)
             c.result['interrupted'] = True
             self.assertEqual(module_coverage(c.result)['analysis']['status'], 'partial')
+
+    def test_html_groups_repeated_findings(self):
+        finding = {'rule_id': 'HW-NET-001', 'title': 'Wildcard listener', 'severity': 'review_candidate',
+                   'classification': 'review_candidate', 'confidence': 'high', 'verification_status': 'pending',
+                   'asset': {'port': 8000}, 'detail': {'package': 'test.app'},
+                   'remediation': 'Restrict it.', 'verification': 'Probe it.', 'evidence': []}
+        document = {'run_id': 'fixture', 'status': 'partial', 'modules': [{'module': 'network', 'category': 'networking',
+                    'findings': [dict(finding, asset={'port': port}) for port in range(8000, 8002)]}]}
+        output = render(document)
+        self.assertIn('(2 findings)', output)
+        self.assertEqual(output.count('Wildcard listener'), 3)
 
     def test_catalog_has_unique_ids_and_guidance(self):
         from android_audit.findings import RULE_DATA
