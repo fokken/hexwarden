@@ -14,9 +14,9 @@ Configure a prepared MobSF server and set `MOBSF_API_KEY` in your environment. I
 python3 -m hexwarden scan --modules app_extraction --extract-apks \
   --package com.example.app
 
-# Copy selected files from data/<run-id>/apks/ into ./mobsf-upload/
+# Copy selected package-qualified files from data/<run-id>/apks/ into ./mobsf-upload/
 mkdir -p mobsf-upload
-cp data/<run-id>/apks/com.example.app/000.apk mobsf-upload/
+cp data/<run-id>/apks/com.example.app/com.example.app-000.apk mobsf-upload/
 
 # Phase 2: upload only the reviewed APKs
 python3 -m hexwarden scan --mobsf \

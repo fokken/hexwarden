@@ -123,28 +123,34 @@ def collect_apps(c):
                 value = c.command([c.args.adb, '-s', c.args.serial, 'pull', remote, str(destination)], 'pull_' + package)
                 if value is None or not destination.is_file():
                     continue
+                # Keep the stable numeric path for compatibility and add a
+                # package-qualified alias for review/MobSF handoff.
+                named_destination = directory / f'{package}-{index:03d}.apk'
+                if named_destination != destination:
+                    shutil.copy2(destination, named_destination)
                 digest = hashlib.sha256()
-                with destination.open('rb') as stream:
+                with named_destination.open('rb') as stream:
                     for block in iter(lambda: stream.read(1024 * 1024), b''):
                         digest.update(block)
-                item['apks'].append({'path': str(destination.relative_to(c.root)), 'remote': remote,
-                                     'sha256': digest.hexdigest()})
+                item['apks'].append({'path': str(named_destination.relative_to(c.root)),
+                                     'compatibility_path': str(destination.relative_to(c.root)),
+                                     'remote': remote, 'sha256': digest.hexdigest()})
                 item['apks'][-1]['signature'] = {'status': 'unavailable', 'sha256': [], 'evidence': []}
                 if shutil.which('apksigner'):
                     from .app_trust import parse_signature
-                    output = c.command(['apksigner', 'verify', '--verbose', '--print-certs', str(destination)], 'signature_' + package)
+                    output = c.command(['apksigner', 'verify', '--verbose', '--print-certs', str(named_destination)], 'signature_' + package)
                     item['apks'][-1]['signature'] = parse_signature(output)
                     item['apks'][-1]['signature']['evidence'] = list(c.latest_evidence)
                 else:
                     c.note('apksigner unavailable: cryptographic APK signature verification skipped.')
                 if APK:
                     try:
-                        apk = APK(str(destination))
+                        apk = APK(str(named_destination))
                         manifest = manifest_analysis(apk.get_android_manifest_xml())
-                        manifest['apk'] = str(destination.relative_to(c.root))
+                        manifest['apk'] = str(named_destination.relative_to(c.root))
                         item['manifests'].append(manifest)
-                        destination.with_suffix('.manifest.xml').write_bytes(apk.get_android_manifest_axml().get_xml())
-                        c.result['evidence'].append({'path': str(destination.with_suffix('.manifest.xml').relative_to(c.root)), 'kind': 'decoded_manifest'})
+                        named_destination.with_suffix('.manifest.xml').write_bytes(apk.get_android_manifest_axml().get_xml())
+                        c.result['evidence'].append({'path': str(named_destination.with_suffix('.manifest.xml').relative_to(c.root)), 'kind': 'decoded_manifest'})
                     except Exception as exc:
                         c.note(f'{package}: manifest analysis failed ({type(exc).__name__}).')
         apps.append(item)
