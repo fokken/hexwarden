@@ -61,21 +61,7 @@ python3 -m hexwarden scan --drozer --package com.example.app \
 python3 -m hexwarden scan --drozer \
   --drozer-readable-path /vendor \
   --drozer-readable-path /system/etc
-
-# Explicit runtime authorization checks (state-changing operations require review)
-python3 -m hexwarden scan --drozer --drozer-runtime \
-  --drozer-activity com.example.app/com.example.app.ExportActivity \
-  --drozer-service com.example.app/com.example.app.ExportService \
-  --drozer-broadcast com.example.app/com.example.app.ExportReceiver \
-  --drozer-provider-uri content://com.example.app.provider/items \
-  --drozer-finduris-package com.example.app
 ```
-
-When `--drozer-runtime` is used without `--modules` or `--category`, this is a
-standalone runtime-test workflow: Hexwarden runs preflight and the Drozer
-module discovery plus the explicitly selected runtime modules without running
-Drozer inventory, UID, grant, filesystem, or special-access checks. Add explicit
-modules or a category when you want to combine runtime tests with another scan.
 
 The integration discovers available modules using the CLI's `list` command. It runs built-in `app.package.list`, global `app.package.info`, global `app.package.shareduid`, and global component inventory modules `app.activity.info`, `app.service.info`, `app.provider.info` and `app.broadcast.info`, each without a package argument. This collects the complete package/component inventory exposed by the agent. It does not use `app.package.attacksurface` for a single selected package. Missing modules are skipped with a coverage reason. `--package` and `--max-apps` apply to the separate per-package grant/AppOps checks and bundled agent probes; they do not narrow the global inventory modules.
 
@@ -88,7 +74,6 @@ The bundled `hexwarden.audit` module is likewise invoked through the CLI. A per-
 * A one-byte read attempt against each `--drozer-read-path` regular file, with the byte discarded. Empty files can still demonstrate successful opening. No special devices or FIFOs are opened.
 * The built-in `scanner.misc.readablefiles` module against each explicit `--drozer-readable-path`. This is an opt-in directory scan performed by Drozer in the agent context; it does not recursively copy files or retain file contents. Path-shaped result rows receive `HW-DZ-005`, while the complete raw module output remains evidence. Scan behavior and recursion depend on the installed Drozer module version.
 * Optional `--drozer-write-dir` tests using Java-created unique `hexwarden-*.probe` files. Each probe writes one byte and attempts deletion in a cleanup block. Probe creation is logged immediately; an unconfirmed cleanup is reported. Forced termination can leave a probe behind.
-* Optional runtime authorization checks using Drozer's built-in `app.activity.start`, `app.service.start`, `app.broadcast.send`, `app.provider.query`, and `scanner.provider.finduris` modules. Targets must be supplied explicitly with `--drozer-activity`, `--drozer-service`, `--drozer-broadcast`, `--drozer-provider-uri`, or `--drozer-finduris-package` together with `--drozer-runtime`. Accepted component invocations receive `HW-DZ-006`; accepted provider queries or URI discovery receive `HW-DZ-007`. Hexwarden does not automatically invoke every exported component, and raw output remains evidence for review.
 
 Actual probe outcomes and agent identity are saved in `integrations/drozer/agent-checks.json` and included in findings. UID groups are saved in `evidence/drozer/shared-uids.json`. Full UIDs keep Android users separate. Shared groups and system-range app IDs (below 10,000) generate observations; system-range IDs, observed `/priv-app/` paths and sensitive grants raise their review priority. The helper reports assigned package identities, not live process UIDs, root access or equivalent SELinux privileges. Package visibility can hide peers, and grants are inspected only for the agent and selected packages. Readable-file scans identify paths accessible to the agent, not necessarily world-readable files or sensitive data.
 

@@ -57,18 +57,6 @@ def device_path(value):
     return value
 
 
-def drozer_component(value):
-    if not re.fullmatch(r'[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*/[^\s/]+', value):
-        raise argparse.ArgumentTypeError('expected PACKAGE/COMPONENT')
-    return value
-
-
-def drozer_uri(value):
-    if not re.fullmatch(r'content://[^\s]+', value):
-        raise argparse.ArgumentTypeError('expected a content:// URI')
-    return value
-
-
 def capture_interface(value):
     if not re.fullmatch(r'[A-Za-z0-9_.:-]+', value):
         raise argparse.ArgumentTypeError('expected a simple interface name such as any, wlan0 or rmnet0')
@@ -156,12 +144,6 @@ def parser():
     scan.add_argument('--drozer-readable-path', type=device_path, action='append', default=[], help='run scanner.misc.readablefiles on an agent-visible directory; repeatable')
     scan.add_argument('--drozer-write-dir', type=device_path, action='append', default=[], help='opt in to creating/writing/removing a unique probe file in this directory')
     scan.add_argument('--drozer-entry-limit', type=positive, default=50)
-    scan.add_argument('--drozer-runtime', action='store_true', help='run explicitly selected Drozer runtime component/provider authorization checks')
-    scan.add_argument('--drozer-activity', type=drozer_component, action='append', default=[], metavar='PACKAGE/COMPONENT', help='run app.activity.start for an explicit component')
-    scan.add_argument('--drozer-service', type=drozer_component, action='append', default=[], metavar='PACKAGE/COMPONENT', help='run app.service.start for an explicit component')
-    scan.add_argument('--drozer-broadcast', type=drozer_component, action='append', default=[], metavar='PACKAGE/RECEIVER', help='run app.broadcast.send for an explicit receiver')
-    scan.add_argument('--drozer-provider-uri', type=drozer_uri, action='append', default=[], metavar='CONTENT_URI', help='run app.provider.query for an explicit URI')
-    scan.add_argument('--drozer-finduris-package', action='append', default=[], metavar='PACKAGE', help='run scanner.provider.finduris for an explicit package')
     scan.add_argument('--emba-firmware', type=Path, help='run EMBA against an existing local firmware image/directory')
     scan.add_argument('--emba', default='emba', help='path to EMBA executable')
     scan.add_argument('--integration-timeout', type=positive, default=1800)
@@ -227,10 +209,6 @@ def main(argv=None):
             p.error('invalid package name')
     if args.modules:
         selected = list(args.modules)
-    elif args.drozer_runtime and not args.category:
-        # Runtime authorization is an explicit integration workflow; do not
-        # silently rerun every device collector unless requested.
-        selected = []
     elif args.radamsa_fuzz and not args.category:
         # The explicit fuzz flag is a separate workflow; do not silently rerun
         # every collection module unless the caller asks for them.
@@ -241,13 +219,12 @@ def main(argv=None):
             selected = [name for name in selected if name != 'radamsa_fuzz']
     if args.radamsa_fuzz and 'radamsa_fuzz' not in selected:
         selected.append('radamsa_fuzz')
-    args.drozer_runtime_only = args.drozer_runtime and not args.modules and not args.category
     if set(selected) - modules.keys():
         p.error('unknown modules: ' + ', '.join(sorted(set(selected) - modules.keys())))
     selected = list(dict.fromkeys(name for name in selected if not args.category or modules[name].CATEGORY in args.category))
     if args.radamsa_fuzz and 'radamsa_fuzz' not in selected:
         selected.append('radamsa_fuzz')
-    if not selected and not args.mobsf and not args.drozer_runtime:
+    if not selected and not args.mobsf:
         p.error('selection contains no modules')
     if 'radamsa_fuzz' in selected and not args.radamsa_fuzz:
         p.error('radamsa_fuzz requires --radamsa-fuzz')
@@ -272,15 +249,8 @@ def main(argv=None):
             args.signer_policy = load_policy(args.blocked_certs)
         except (OSError, ValueError) as exc:
             p.error(f'invalid --blocked-certs policy: {exc}')
-    runtime_options = (args.drozer_activity or args.drozer_service or args.drozer_broadcast or
-                       args.drozer_provider_uri or args.drozer_finduris_package)
-    if (args.drozer_list_path or args.drozer_read_path or args.drozer_write_dir or args.drozer_readable_path or
-            args.drozer_runtime or runtime_options) and not args.drozer:
-        p.error('Drozer options require --drozer')
-    if runtime_options and not args.drozer_runtime:
-        p.error('Drozer runtime targets require --drozer-runtime')
-    if args.drozer_runtime and not runtime_options:
-        p.error('--drozer-runtime requires at least one explicit runtime target')
+    if (args.drozer_list_path or args.drozer_read_path or args.drozer_write_dir or args.drozer_readable_path) and not args.drozer:
+        p.error('Drozer filesystem options require --drozer')
     if args.drozer_entry_limit > 1000:
         p.error('--drozer-entry-limit must not exceed 1000')
     if args.bt_mac and 'bluetooth' not in selected:
@@ -362,11 +332,7 @@ def main(argv=None):
         'list_paths': args.drozer_list_path or ['/data', '/data/local/tmp', '/sdcard'],
         'read_paths': args.drozer_read_path, 'readable_paths': args.drozer_readable_path,
         'write_directories': args.drozer_write_dir,
-        'entry_limit': args.drozer_entry_limit,
-        'runtime': args.drozer_runtime,
-        'activities': args.drozer_activity, 'services': args.drozer_service,
-        'broadcasts': args.drozer_broadcast, 'provider_uris': args.drozer_provider_uri,
-        'finduris_packages': args.drozer_finduris_package}
+        'entry_limit': args.drozer_entry_limit}
     exit_code = 0
     try:
         devices = subprocess.run([args.adb, 'devices'], capture_output=True, text=True, timeout=args.timeout)

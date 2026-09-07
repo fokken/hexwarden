@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 from android_audit.core import Context
 from android_audit.drozer_checks import analyze, parse_events, parse_readable_file_paths, run, report_uids
-from android_audit.drozer_checks import runtime_checks
 
 
 def load_probe():
@@ -155,26 +154,6 @@ class OrchestrationTests(unittest.TestCase):
             report_uids(c, [], {})
             self.assertEqual(c.result['analysis_checks'][0]['status'], 'not_evaluated')
 
-    def test_runtime_checks_use_explicit_builtin_modules(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            c = self.context(tmp)
-            c.args.drozer_activity = ['test.app/test.app.MainActivity']
-            c.args.drozer_service = ['test.app/test.app.SyncService']
-            c.args.drozer_broadcast = ['test.app/test.app.BootReceiver']
-            c.args.drozer_provider_uri = ['content://test.app.provider/items']
-            c.args.drozer_finduris_package = ['test.app']
-            c.result['execution_context'] = {'package': 'agent', 'uid': 123}
-            calls = []
-            def module(name, args):
-                calls.append((name, args))
-                return ''
-            runtime_checks(c, module)
-            self.assertEqual([call[0] for call in calls], [
-                'app.activity.start', 'app.service.start', 'app.broadcast.send',
-                'app.provider.query', 'scanner.provider.finduris'])
-            self.assertEqual(c.result['findings'][0]['rule_id'], 'HW-DZ-006')
-            self.assertEqual(c.result['findings'][-1]['rule_id'], 'HW-DZ-007')
-
     def context(self, tmp):
         args = argparse.Namespace(timeout=1, integration_timeout=2, drozer_bin='drozer', user=0,
             drozer_server='127.0.0.1', package=['test.app'], max_apps=None,
@@ -216,31 +195,6 @@ class OrchestrationTests(unittest.TestCase):
             self.assertFalse(any('run app.service.info -a' in text for text in command_text))
             self.assertTrue((c.root / 'integrations/drozer/.drozer_config').exists())
             self.assertEqual(c.result['execution_context']['uid'], 123)
-
-    def test_standalone_runtime_skips_regular_drozer_checks(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            c = self.context(tmp)
-            c.args.drozer_runtime = True
-            c.args.drozer_runtime_only = True
-            c.args.drozer_activity = ['test.app/test.app.MainActivity']
-            c.args.drozer_service = []
-            c.args.drozer_broadcast = []
-            c.args.drozer_provider_uri = []
-            c.args.drozer_finduris_package = []
-            commands = []
-            def command(argv, label, *args, **kwargs):
-                commands.append(argv[-1] if argv else '')
-                if label == 'drozer_cli_help':
-                    return '--no-color --no-password'
-                if label == 'drozer_available_modules':
-                    return 'app.activity.start  Start activity\nhexwarden.audit  Checks\n'
-                return ''
-            c.command = command
-            with patch('android_audit.drozer_checks.shutil.which', return_value='/usr/bin/drozer'):
-                run(c)
-            self.assertIn('run app.activity.start --component test.app test.app.MainActivity', commands)
-            self.assertFalse(any('app.package.info' in text for text in commands))
-            self.assertFalse(any('hexwarden.audit' in text for text in commands))
 
     def test_incomplete_cleanup_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
