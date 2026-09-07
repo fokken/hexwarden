@@ -134,6 +134,7 @@ The banner goes to stderr; `--no-banner` suppresses it. The original `android-au
 | [Bluetooth](docs/BLUETOOTH.md) | Host setup, Classic/BLE discovery, reads, connection and bounded write-authorization tests |
 | [Radamsa fuzzing](docs/RADAMSA_FUZZ.md) | Explicit TCP/UDP service fuzzing with durable timestamped payload journals |
 | [All checks](docs/CHECKS.md) | Every module's collected data, automated checks, findings and limits |
+| [Findings catalog](docs/FINDINGS.md) | All finding codes, classifications, remediation, and verification guidance |
 | [Integrations](docs/INTEGRATIONS.md) | MobSF, Drozer and EMBA setup |
 | [Coverage](docs/PLAN.md) | All modules, categories and remaining gaps |
 

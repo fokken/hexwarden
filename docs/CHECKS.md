@@ -73,4 +73,4 @@ Every run contains `report.txt`, `report.json`, `audit.log`, `capabilities.json`
 - `traffic.pcap` and capture metadata for passive analysis
 - Bluetooth SDP and structured BLE results
 
-Use [REPORT_FORMAT.md](REPORT_FORMAT.md) for coverage states, finding fields and evidence locators. Use [PLAN.md](PLAN.md) for the module-level roadmap and known gaps.
+Use [FINDINGS.md](FINDINGS.md) for the complete finding-code catalog. Use [REPORT_FORMAT.md](REPORT_FORMAT.md) for coverage states, finding fields and evidence locators. Use [PLAN.md](PLAN.md) for the module-level roadmap and known gaps.
