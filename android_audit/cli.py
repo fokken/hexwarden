@@ -241,6 +241,7 @@ def main(argv=None):
             selected = [name for name in selected if name != 'radamsa_fuzz']
     if args.radamsa_fuzz and 'radamsa_fuzz' not in selected:
         selected.append('radamsa_fuzz')
+    args.drozer_runtime_only = args.drozer_runtime and not args.modules and not args.category
     if set(selected) - modules.keys():
         p.error('unknown modules: ' + ', '.join(sorted(set(selected) - modules.keys())))
     selected = list(dict.fromkeys(name for name in selected if not args.category or modules[name].CATEGORY in args.category))

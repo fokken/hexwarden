@@ -217,6 +217,31 @@ class OrchestrationTests(unittest.TestCase):
             self.assertTrue((c.root / 'integrations/drozer/.drozer_config').exists())
             self.assertEqual(c.result['execution_context']['uid'], 123)
 
+    def test_standalone_runtime_skips_regular_drozer_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = self.context(tmp)
+            c.args.drozer_runtime = True
+            c.args.drozer_runtime_only = True
+            c.args.drozer_activity = ['test.app/test.app.MainActivity']
+            c.args.drozer_service = []
+            c.args.drozer_broadcast = []
+            c.args.drozer_provider_uri = []
+            c.args.drozer_finduris_package = []
+            commands = []
+            def command(argv, label, *args, **kwargs):
+                commands.append(argv[-1] if argv else '')
+                if label == 'drozer_cli_help':
+                    return '--no-color --no-password'
+                if label == 'drozer_available_modules':
+                    return 'app.activity.start  Start activity\nhexwarden.audit  Checks\n'
+                return ''
+            c.command = command
+            with patch('android_audit.drozer_checks.shutil.which', return_value='/usr/bin/drozer'):
+                run(c)
+            self.assertIn('run app.activity.start --component test.app test.app.MainActivity', commands)
+            self.assertFalse(any('app.package.info' in text for text in commands))
+            self.assertFalse(any('hexwarden.audit' in text for text in commands))
+
     def test_incomplete_cleanup_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             c = self.context(tmp)

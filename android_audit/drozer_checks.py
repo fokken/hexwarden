@@ -226,6 +226,11 @@ def run(c):
             return None
         return invoke(shlex.join(['run', name, *args]), name.replace('.', '_'))
 
+    if getattr(c.args, 'drozer_runtime_only', False):
+        runtime_checks(c, module)
+        c.note('Standalone Drozer runtime workflow: package inventory, UID, grant, filesystem and special-access checks were not run.')
+        return
+
     module('app.package.list')
     # These inventory modules are global when invoked without package arguments.
     # Keep the complete package/component surface in one pass instead of reducing
