@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from android_audit.core import Context
 from android_audit.drozer_checks import analyze, parse_events, parse_readable_file_paths, run, report_uids
+from android_audit.drozer_checks import runtime_checks
 
 
 def load_probe():
@@ -153,6 +154,26 @@ class OrchestrationTests(unittest.TestCase):
             c = self.context(tmp)
             report_uids(c, [], {})
             self.assertEqual(c.result['analysis_checks'][0]['status'], 'not_evaluated')
+
+    def test_runtime_checks_use_explicit_builtin_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = self.context(tmp)
+            c.args.drozer_activity = ['test.app/test.app.MainActivity']
+            c.args.drozer_service = ['test.app/test.app.SyncService']
+            c.args.drozer_broadcast = ['test.app/test.app.BootReceiver']
+            c.args.drozer_provider_uri = ['content://test.app.provider/items']
+            c.args.drozer_finduris_package = ['test.app']
+            c.result['execution_context'] = {'package': 'agent', 'uid': 123}
+            calls = []
+            def module(name, args):
+                calls.append((name, args))
+                return ''
+            runtime_checks(c, module)
+            self.assertEqual([call[0] for call in calls], [
+                'app.activity.start', 'app.service.start', 'app.broadcast.send',
+                'app.provider.query', 'scanner.provider.finduris'])
+            self.assertEqual(c.result['findings'][0]['rule_id'], 'HW-DZ-006')
+            self.assertEqual(c.result['findings'][-1]['rule_id'], 'HW-DZ-007')
 
     def context(self, tmp):
         args = argparse.Namespace(timeout=1, integration_timeout=2, drozer_bin='drozer', user=0,

@@ -15,6 +15,10 @@ SENSITIVE_GRANTS = {
     'android.permission.READ_PRIVILEGED_PHONE_STATE', 'android.permission.MASTER_CLEAR',
 }
 
+RUNTIME_DENIAL = re.compile(
+    r'permission denied|securityexception|not permitted|unable to (?:start|query|send)|'
+    r'failed to (?:start|query|send)|does not have permission|access denied|not exported', re.I)
+
 
 def parse_events(text):
     events = []
@@ -132,6 +136,54 @@ def report_uids(c, events, identity):
            'or identical SELinux/API access. Package visibility can hide peers.')
 
 
+def _runtime_target(value):
+    package, component = value.split('/', 1)
+    return package, component
+
+
+def _runtime_result(c, command_name, target, output, finding_id, evidence):
+    if output is None:
+        status = 'unavailable'
+    elif RUNTIME_DENIAL.search(output):
+        status = 'denied'
+    else:
+        status = 'accepted'
+    c.check('drozer_runtime_' + command_name.replace('.', '_'), status != 'unavailable',
+            scope=target, evidence=evidence,
+            reason='Drozer command failed or was unavailable.' if status == 'unavailable' else None)
+    if status == 'accepted':
+        detail = {'module': command_name, 'target': target, 'status': status,
+                  'observer': c.result.get('execution_context')}
+        c.finding(finding_id, detail, 'info', 'high', evidence=evidence)
+    return status
+
+
+def runtime_checks(c, module):
+    """Run explicitly selected built-in Drozer runtime authorization modules."""
+    targets = []
+    for value in getattr(c.args, 'drozer_activity', []):
+        package, component = _runtime_target(value)
+        targets.append(('activity', 'app.activity.start', ['--component', package, component], value, 'HW-DZ-006'))
+    for value in getattr(c.args, 'drozer_service', []):
+        package, component = _runtime_target(value)
+        targets.append(('service', 'app.service.start', ['--component', package, component], value, 'HW-DZ-006'))
+    for value in getattr(c.args, 'drozer_broadcast', []):
+        package, component = _runtime_target(value)
+        targets.append(('broadcast', 'app.broadcast.send', ['--component', package, component], value, 'HW-DZ-006'))
+    for module_name, command_name, args, target, finding_id in targets:
+        value = module(command_name, args)
+        evidence = list(c.latest_evidence)
+        _runtime_result(c, command_name, target, value, finding_id, evidence)
+    for uri in getattr(c.args, 'drozer_provider_uri', []):
+        value = module('app.provider.query', [uri, '--vertical'])
+        evidence = list(c.latest_evidence)
+        _runtime_result(c, 'app.provider.query', uri, value, 'HW-DZ-007', evidence)
+    for package in getattr(c.args, 'drozer_finduris_package', []):
+        value = module('scanner.provider.finduris', ['-a', package])
+        evidence = list(c.latest_evidence)
+        _runtime_result(c, 'scanner.provider.finduris', package, value, 'HW-DZ-007', evidence)
+
+
 def run(c):
     executable = shutil.which(c.args.drozer_bin)
     if not executable:
@@ -218,8 +270,10 @@ def run(c):
     c.result['evidence'].append({'path': str(path.relative_to(c.root)), 'kind': 'derived'})
     c.latest_evidence = [{'path': str(path.relative_to(c.root))}]
     analyze(c, events)
+    if getattr(c.args, 'drozer_runtime', False):
+        runtime_checks(c, module)
     # Special accesses have AppOps/policy semantics beyond PackageManager grants.
     for key in ('enabled_accessibility_services', 'enabled_notification_listeners'):
         c.setting('secure', key)
     c.shell('dumpsys device_policy', 'special_access_policy')
-    c.note('All Drozer operations use its CLI and the connected agent identity. Global package/component inventory and app.package.shareduid run without a package argument; PackageManager grants and AppOps remain scoped to selected packages. Grants do not establish AppOps authorization or successful privileged API use. Inventory is not invocation. ADB policy evidence is separate from agent tests. Confirm the Drozer endpoint matches the ADB target; no automatic forwarding, agent installation or privilege escalation occurs.')
+    c.note('All Drozer operations use its CLI and the connected agent identity. Global package/component inventory and app.package.shareduid run without a package argument; PackageManager grants and AppOps remain scoped to selected packages. Explicit runtime checks invoke only operator-selected components and provider URIs; accepted calls are observations in the agent context, not proof of a vulnerability. Grants do not establish AppOps authorization or successful privileged API use. ADB policy evidence is separate from agent tests. Confirm the Drozer endpoint matches the ADB target; no automatic forwarding, agent installation or privilege escalation occurs.')
